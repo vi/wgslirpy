@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use bytes::BytesMut;
 use smoltcp::phy::{Device,RxToken,TxToken};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -5,29 +7,29 @@ use tracing::warn;
 
 pub struct ChannelizedDevice {
     pub tx : Sender<BytesMut>,
-    pub rx: Receiver<BytesMut>,
+    pub rx: Option<BytesMut>,
 }
 
 pub struct RxTokenWrap(pub BytesMut);
 
-impl Device for ChannelizedDevice {
+impl<'b> Device for ChannelizedDevice {
     type RxToken<'a>
      = RxTokenWrap where Self: 'a;
 
     type TxToken<'a>
      = &'a ChannelizedDevice where Self: 'a;
 
-    fn receive(&mut self, timestamp: smoltcp::time::Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        if let Ok(x) = self.rx.try_recv() {
-            warn!("Received something");
+    fn receive(&mut self, _timestamp: smoltcp::time::Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        if let Some(x) = self.rx.take() {
+            //warn!("Received something");
             Some((RxTokenWrap(x), &*self))
         } else {
-            warn!("Nothing to receive from here yet");
+            //warn!("Nothing to receive from here yet");
             None
         }
     }
 
-    fn transmit(&mut self, timestamp: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
+    fn transmit(&mut self, _timestamp: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
         if self.tx.capacity() == self.tx.max_capacity() {
             warn!("No capacity to transmit");
             return None

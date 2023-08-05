@@ -5,7 +5,7 @@ use boringtun::x25519::{PublicKey, StaticSecret};
 use bytes::{Bytes, BytesMut};
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use boringtun::noise::TunnResult;
-use tracing::error;
+use tracing::{error, warn};
 
 pub struct Opts {
     pub private_key: StaticSecret,
@@ -27,9 +27,9 @@ impl Opts {
         ).map_err(|e|anyhow::anyhow!(e))?;
 
         let (tx_towg, mut rx_towg) = channel(4);
-        let (mut tx_fromwg, rx_fromwg) = channel(4);
+        let (tx_fromwg, rx_fromwg) = channel(4);
 
-        let mut udp = tokio::net::UdpSocket::bind(self.bind_ip_port).await?;
+        let udp = tokio::net::UdpSocket::bind(self.bind_ip_port).await?;
 
         let mut current_peer_addr = self.peer_endpoint;
         let static_peer_addr = self.peer_endpoint;
@@ -52,6 +52,13 @@ impl Opts {
                         last_seen_recv_address = Some(from);
 
                         Some(wg.decapsulate(None, buf, &mut wg_scratch_buf))
+                    }
+                    ret = rx_towg.recv() => {
+                        let Some(incoming) : Option<BytesMut> = ret else {
+                            warn!("Finished possible packets into wg");
+                            break
+                        };
+                        Some(wg.encapsulate(&incoming[..], &mut wg_scratch_buf))
                     }
                 };
                 loop {
