@@ -1,8 +1,8 @@
-use std::cell::RefCell;
+
 
 use bytes::BytesMut;
 use smoltcp::phy::{Device,RxToken,TxToken};
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{Sender};
 use tracing::warn;
 
 pub struct ChannelizedDevice {

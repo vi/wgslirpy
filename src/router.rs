@@ -1,16 +1,16 @@
-use std::cell::RefCell;
 
-use bytes::{Bytes, BytesMut};
+
+use bytes::{BytesMut};
 use hashbrown::HashMap;
-use smoltcp::socket::udp;
-use smoltcp::time::Instant;
-use smoltcp::wire::{IpAddress, IpCidr, IpProtocol, IpRepr, Ipv4Packet, Ipv6Packet, UdpPacket};
+
+
+use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, Ipv6Packet, UdpPacket};
 use smoltcp::wire::{IpEndpoint, IpVersion, PrettyPrinter, TcpPacket};
-use tokio::net::UdpSocket;
+
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::{debug, error, info, warn};
 
-use crate::channelized_smoltcp_device::ChannelizedDevice;
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Proto {
@@ -33,10 +33,10 @@ enum IpPacket<T: AsRef<[u8]>> {
 mod serve_udp;
 
 pub async fn tcp_outgoing_connection(
-    tx_to_wg: Sender<BytesMut>,
-    rx_from_wg: Receiver<BytesMut>,
-    external_addr: IpEndpoint,
-    client_addr: IpEndpoint,
+    _tx_to_wg: Sender<BytesMut>,
+    _rx_from_wg: Receiver<BytesMut>,
+    _external_addr: IpEndpoint,
+    _client_addr: IpEndpoint,
 ) -> anyhow::Result<()> {
     todo!()
 }

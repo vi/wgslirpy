@@ -104,7 +104,7 @@ pub async fn udp_outgoing_connection(
                 }
             }
             from_ext = udp.recv_from(&mut external_udp_buffer) => {
-                if let Ok((n, from)) = from_ext {
+                if let Ok((n, _from)) = from_ext {
                     warn!("WEW");
                     // ignore the smoltcp socket, use smoltcp wire directly to be able to fake sender address
                     let data = &external_udp_buffer[..n];
