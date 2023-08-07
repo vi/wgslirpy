@@ -1,3 +1,4 @@
+#![allow(unused_braces)]
 use std::net::SocketAddr;
 
 use argh::FromArgs;

@@ -1,6 +1,6 @@
 
 
-use bytes::{BytesMut};
+use bytes::BytesMut;
 use hashbrown::HashMap;
 
 
@@ -25,21 +25,8 @@ struct NatKey {
     external_side: IpEndpoint,
 }
 
-enum IpPacket<T: AsRef<[u8]>> {
-    Ipv4(Ipv4Packet<T>),
-    Ipv6(Ipv6Packet<T>),
-}
-
 mod serve_udp;
-
-pub async fn tcp_outgoing_connection(
-    _tx_to_wg: Sender<BytesMut>,
-    _rx_from_wg: Receiver<BytesMut>,
-    _external_addr: IpEndpoint,
-    _client_addr: IpEndpoint,
-) -> anyhow::Result<()> {
-    todo!()
-}
+mod serve_tcp;
 
 pub async fn run(
     mut rx_from_wg: Receiver<BytesMut>,
@@ -79,7 +66,7 @@ pub async fn run(
                     },
                     IpProtocol::Tcp => match TcpPacket::new_checked(p.payload()) {
                         Ok(u) => NatKey {
-                            proto: Proto::Udp,
+                            proto: Proto::Tcp,
                             client_side: IpEndpoint {
                                 addr: IpAddress::Ipv4(src_addr),
                                 port: u.src_port(),
@@ -114,7 +101,7 @@ pub async fn run(
                 let k = entry.key().clone();
                 tokio::spawn(async move {
                     let ret = match k.proto {
-                        Proto::Tcp => tcp_outgoing_connection(
+                        Proto::Tcp => serve_tcp::tcp_outgoing_connection(
                             tx_to_wg2,
                             rx_persocket_fromwg,
                             k.external_side,

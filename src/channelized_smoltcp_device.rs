@@ -1,8 +1,8 @@
 
 
 use bytes::BytesMut;
-use smoltcp::phy::{Device,RxToken,TxToken};
-use tokio::sync::mpsc::{Sender};
+use smoltcp::phy::{Device,RxToken,TxToken, Checksum};
+use tokio::sync::mpsc::Sender;
 use tracing::warn;
 
 pub struct ChannelizedDevice {
@@ -30,7 +30,7 @@ impl<'b> Device for ChannelizedDevice {
     }
 
     fn transmit(&mut self, _timestamp: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
-        if self.tx.capacity() == self.tx.max_capacity() {
+        if self.tx.capacity() == 0 {
             warn!("No capacity to transmit");
             return None
         }
@@ -42,6 +42,10 @@ impl<'b> Device for ChannelizedDevice {
         caps.medium = smoltcp::phy::Medium::Ip;
         caps.max_transmission_unit = 1024;
         caps.checksum = smoltcp::phy::ChecksumCapabilities::ignored();
+        caps.checksum.tcp = Checksum::Tx;
+        caps.checksum.ipv4 = Checksum::Tx;
+        caps.checksum.icmpv4 = Checksum::Tx;
+        caps.checksum.icmpv6 = Checksum::Tx;
         caps
     }
 }
