@@ -4,8 +4,8 @@ use bytes::BytesMut;
 use hashbrown::HashMap;
 
 
-use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, Ipv6Packet, UdpPacket};
-use smoltcp::wire::{IpEndpoint, IpVersion, PrettyPrinter, TcpPacket};
+use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, UdpPacket};
+use smoltcp::wire::{IpEndpoint, IpVersion, TcpPacket};
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::{debug, error, info, warn};

@@ -1,8 +1,8 @@
-use std::{net::{SocketAddr}, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use base64::Engine;
 use boringtun::x25519::{PublicKey, StaticSecret};
-use bytes::{BytesMut};
+use bytes::BytesMut;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use boringtun::noise::TunnResult;
 use tracing::{error, warn};

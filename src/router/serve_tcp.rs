@@ -1,5 +1,5 @@
 use std::{
-    net::{SocketAddr, SocketAddrV4, SocketAddrV6},
+    net::SocketAddr,
     time::Duration,
 };
 
@@ -10,7 +10,7 @@ use smoltcp::{
     socket::tcp,
     time::Instant,
     wire::{
-        HardwareAddress, IpAddress, IpCidr, IpEndpoint, IpProtocol, IpRepr, Ipv4Packet, Ipv6Packet,
+        HardwareAddress, IpAddress, IpCidr, IpEndpoint,
     },
 };
 use tokio::{
