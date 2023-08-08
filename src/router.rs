@@ -41,7 +41,7 @@ pub async fn run(
                 continue;
             }
             Ok(IpVersion::Ipv4) => {
-                println!("{}", PrettyPrinter::<Ipv4Packet<&[u8]>>::new("", &buf));
+                //println!("{}", PrettyPrinter::<Ipv4Packet<&[u8]>>::new("", &buf));
                 let Ok(p) = Ipv4Packet::new_checked(&buf[..]) else {
                     error!("Dwarf packet"); continue;
                 };

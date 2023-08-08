@@ -26,7 +26,7 @@ impl Opts {
             None,
         ).map_err(|e|anyhow::anyhow!(e))?;
 
-        let (tx_towg, mut rx_towg) = channel(4);
+        let (tx_towg, mut rx_towg) = channel(64);
         let (tx_fromwg, rx_fromwg) = channel(4);
 
         let udp = tokio::net::UdpSocket::bind(self.bind_ip_port).await?;
