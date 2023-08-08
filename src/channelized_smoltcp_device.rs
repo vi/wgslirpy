@@ -5,9 +5,22 @@ use smoltcp::phy::{Device,RxToken,TxToken, Checksum};
 use tokio::sync::mpsc::Sender;
 use tracing::warn;
 
+use crate::TEAR_OF_ALLOCATION;
+
 pub struct ChannelizedDevice {
     pub tx : Sender<BytesMut>,
     pub rx: Option<BytesMut>,
+    pub tear_off_buffer: BytesMut,
+}
+
+impl ChannelizedDevice {
+    pub fn new(tx: Sender<BytesMut>) -> Self {
+        ChannelizedDevice {
+            tx,
+            rx: None,
+            tear_off_buffer: BytesMut::with_capacity(TEAR_OF_ALLOCATION),
+        }
+    }
 }
 
 pub struct RxTokenWrap(pub BytesMut);
@@ -17,14 +30,14 @@ impl<'b> Device for ChannelizedDevice {
      = RxTokenWrap where Self: 'a;
 
     type TxToken<'a>
-     = &'a ChannelizedDevice where Self: 'a;
+     = &'a mut ChannelizedDevice where Self: 'a;
 
     fn receive(&mut self, _timestamp: smoltcp::time::Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         if let Some(x) = self.rx.take() {
-            //warn!("Received something");
-            Some((RxTokenWrap(x), &*self))
+            //warn!("Received len={} {:?}", x.len(), x);
+            Some((RxTokenWrap(x), self))
         } else {
-            //warn!("Nothing to receive from here yet");
+            //warn!("Nothing to receive yet");
             None
         }
     }
@@ -34,7 +47,7 @@ impl<'b> Device for ChannelizedDevice {
             warn!("No capacity to transmit");
             return None
         }
-        Some(&*self)
+        Some(self)
     }
 
     fn capabilities(&self) -> smoltcp::phy::DeviceCapabilities {
@@ -57,14 +70,19 @@ impl RxToken for RxTokenWrap {
         f(&mut self.0[..])
     }
 }
-impl<'a> TxToken for &'a ChannelizedDevice {
+impl<'a> TxToken for &'a mut ChannelizedDevice {
     fn consume<R, F>(self, len: usize, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R {
-        let mut b = BytesMut::zeroed(len);
-        let ret = f(&mut b[..]);
-        if self.tx.try_send(b).is_err() {
+        self.tear_off_buffer.resize(len, 0);
+        let ret = f(&mut self.tear_off_buffer[..]);
+        let chunk = self.tear_off_buffer.split();
+        //warn!("Transmitting {chunk:?}");
+        if self.tx.try_send(chunk).is_err() {
             warn!("Failed to transmit into a ChannelizedDevice");
+        }
+        if self.tear_off_buffer.capacity() < 2048 {
+            self.tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION);
         }
         ret
     }

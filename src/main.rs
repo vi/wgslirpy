@@ -27,6 +27,8 @@ pub struct Opts {
     pub bind_ip_port: SocketAddr,
 }
 
+
+const TEAR_OF_ALLOCATION : usize = 65536;
 pub mod wg;
 pub mod router;
 mod channelized_smoltcp_device;

@@ -36,11 +36,7 @@ pub async fn tcp_outgoing_connection(
     let mut tcp = TcpStream::connect(target_addr).await?;
     let (mut tcp_r, mut tcp_w) = tcp.split();
 
-    let pkt_slot: Option<BytesMut> = None;
-    let mut dev = ChannelizedDevice {
-        tx: tx_to_wg,
-        rx: pkt_slot,
-    };
+    let mut dev = ChannelizedDevice::new(tx_to_wg);
 
     let ic = Config::new(HardwareAddress::Ip);
     let mut ii = Interface::new(ic, &mut dev, Instant::now());
@@ -129,7 +125,7 @@ pub async fn tcp_outgoing_connection(
                 ii.poll(Instant::now(), &mut dev, &mut sockets);
             }
             SelectOutcome::PacketFromWg(Some(from_wg)) => {
-                trace!("Packet from wg");
+                trace!("Packet from wg of len {}", from_wg.len());
                 dev.rx = Some(from_wg);
                 ii.poll(Instant::now(), &mut dev, &mut sockets);
             }

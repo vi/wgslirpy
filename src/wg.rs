@@ -7,6 +7,8 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 use boringtun::noise::TunnResult;
 use tracing::{error, warn};
 
+use crate::TEAR_OF_ALLOCATION;
+
 pub struct Opts {
     pub private_key: StaticSecret,
     pub peer_key: PublicKey,
@@ -38,6 +40,7 @@ impl Opts {
             let mut each_second = tokio::time::interval(Duration::from_secs(1));
             let mut udp_recv_buf = [0; 4096-32];
             let mut wg_scratch_buf = [0; 4096];
+            let mut tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION);
             loop {
                 let mut last_seen_recv_address = None;
                 let mut tr : Option<TunnResult> = tokio::select! {
@@ -85,15 +88,12 @@ impl Opts {
                                     error!("Trying to send a wireguard packet without configured peer address");
                                 }
                             }
-                            TunnResult::WriteToTunnelV4(b, _ip) => {
-                                let mut bm = BytesMut::with_capacity(b.len());
-                                bm.extend_from_slice(b);
-                                tx_fromwg.send(bm).await?;
-                            }
-                            TunnResult::WriteToTunnelV6(b, _ip) => {
-                                let mut bm = BytesMut::with_capacity(b.len());
-                                bm.extend_from_slice(b);
-                                tx_fromwg.send(bm).await?;
+                            TunnResult::WriteToTunnelV4(b, _) | TunnResult::WriteToTunnelV6(b, _) => {
+                                tear_off_buffer.extend_from_slice(b);
+                                tx_fromwg.send(tear_off_buffer.split()).await?;
+                                if tear_off_buffer.capacity() < 2048 {
+                                    tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION);
+                                }
                             }
                         }
                     }

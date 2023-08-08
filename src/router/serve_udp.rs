@@ -17,7 +17,7 @@ use tokio::{
 };
 use tracing::warn;
 
-use crate::channelized_smoltcp_device::ChannelizedDevice;
+use crate::{channelized_smoltcp_device::ChannelizedDevice, TEAR_OF_ALLOCATION};
 
 pub async fn udp_outgoing_connection(
     tx_to_wg: Sender<BytesMut>,
@@ -34,12 +34,8 @@ pub async fn udp_outgoing_connection(
         }
     };
 
-    let pkt_slot: Option<BytesMut> = None;
     let udp = UdpSocket::bind(ua).await?;
-    let mut dev = ChannelizedDevice {
-        tx: tx_to_wg,
-        rx: pkt_slot,
-    };
+    let mut dev = ChannelizedDevice::new(tx_to_wg);
 
     let ic = Config::new(HardwareAddress::Ip);
     let mut ii = Interface::new(ic, &mut dev, Instant::now());
@@ -80,6 +76,8 @@ pub async fn udp_outgoing_connection(
     checksummer.ipv4 = Checksum::Tx;
     checksummer.tcp = Checksum::Tx;
 
+    let mut tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION);
+
     'recv_from_wg: loop {
         tokio::select! {
             from_wg = rx_from_wg.recv() => {
@@ -105,11 +103,11 @@ pub async fn udp_outgoing_connection(
             }
             from_ext = udp.recv_from(&mut external_udp_buffer) => {
                 if let Ok((n, _from)) = from_ext {
-                    warn!("WEW");
                     // ignore the smoltcp socket, use smoltcp wire directly to be able to fake sender address
                     let data = &external_udp_buffer[..n];
 
-                    let mut buf = BytesMut::zeroed(4096);
+                    tear_off_buffer.resize(4096-64, 0);
+                    let buf = &mut tear_off_buffer[..];
                     let r = IpRepr::new(external_addr.addr, client_addr.addr, IpProtocol::Udp, data.len() + 8, 64);
 
                     let len = r.buffer_len();
@@ -134,7 +132,6 @@ pub async fn udp_outgoing_connection(
                                 },
                                 &checksummer,
                             );
-                            buf = ippkt4.into_inner();
                         }
                         IpRepr::Ipv6(r) => {
                             let mut ippkt6 = Ipv6Packet::new_unchecked(buf);
@@ -150,11 +147,14 @@ pub async fn udp_outgoing_connection(
                                 },
                                 &checksummer,
                             );
-                            buf = ippkt6.into_inner();
                         }
                     }
-                    buf.resize(len, 0);
+                    tear_off_buffer.resize(len, 0);
+                    let buf = tear_off_buffer.split();
                     dev.tx.send(buf).await?;
+                    if tear_off_buffer.capacity() < 2048 {
+                        tear_off_buffer= BytesMut::with_capacity(TEAR_OF_ALLOCATION);
+                    }
 
                 } else {
                     warn!("Failure receiving from socket");
