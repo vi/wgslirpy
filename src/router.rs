@@ -1,32 +1,25 @@
-
-
 use bytes::BytesMut;
 use hashbrown::HashMap;
 
-
-use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, UdpPacket};
+use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, Ipv6Packet, UdpPacket};
 use smoltcp::wire::{IpEndpoint, IpVersion, TcpPacket};
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::{debug, error, info, warn};
 
-
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum Proto {
-    Tcp,
-    Udp,
+enum NatKey {
+    Tcp {
+        client_side: IpEndpoint,
+        external_side: IpEndpoint,
+    },
+    Udp {
+        client_side: IpEndpoint,
+    },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct NatKey {
-    proto: Proto,
-    client_side: IpEndpoint,
-    external_side: IpEndpoint,
-}
-
-mod serve_udp;
 mod serve_tcp;
+mod serve_udp;
 
 pub async fn run(
     mut rx_from_wg: Receiver<BytesMut>,
@@ -34,7 +27,7 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     let mut table = HashMap::<NatKey, Sender<BytesMut>>::new();
 
-    let (tx_closes, mut rx_closes) : (Sender<NatKey>, Receiver<NatKey>)= channel(4);
+    let (tx_closes, mut rx_closes): (Sender<NatKey>, Receiver<NatKey>) = channel(4);
 
     enum SelectOutcome {
         PacketFromWg(Option<BytesMut>),
@@ -52,69 +45,77 @@ pub async fn run(
             SelectOutcome::ConnectionFinish(None) | SelectOutcome::PacketFromWg(None) => break,
             SelectOutcome::ConnectionFinish(Some(k)) => {
                 table.remove(&k);
-                continue
+                continue;
             }
+        };
 
-        };
-   
-        let key = match IpVersion::of_packet(&buf[..]) {
-            Err(_e) => {
-                warn!("Malformed packet");
-                continue;
-            }
-            Ok(IpVersion::Ipv4) => {
-                //println!("{}", PrettyPrinter::<Ipv4Packet<&[u8]>>::new("", &buf));
-                let Ok(p) = Ipv4Packet::new_checked(&buf[..]) else {
-                    error!("Dwarf packet"); continue;
-                };
-                let (src_addr, dst_addr) = (p.src_addr(), p.dst_addr());
-                match p.next_header() {
-                    IpProtocol::Udp => match UdpPacket::new_checked(p.payload()) {
-                        Ok(u) => NatKey {
-                            proto: Proto::Udp,
-                            client_side: IpEndpoint {
-                                addr: IpAddress::Ipv4(src_addr),
-                                port: u.src_port(),
-                            },
-                            external_side: IpEndpoint {
-                                addr: IpAddress::Ipv4(dst_addr),
-                                port: u.dst_port(),
-                            },
-                        },
-                        Err(_e) => {
-                            warn!("Failed to parse UDP IPv4 packet");
-                            continue;
-                        }
-                    },
-                    IpProtocol::Tcp => match TcpPacket::new_checked(p.payload()) {
-                        Ok(u) => NatKey {
-                            proto: Proto::Tcp,
-                            client_side: IpEndpoint {
-                                addr: IpAddress::Ipv4(src_addr),
-                                port: u.src_port(),
-                            },
-                            external_side: IpEndpoint {
-                                addr: IpAddress::Ipv4(dst_addr),
-                                port: u.dst_port(),
-                            },
-                        },
-                        Err(_e) => {
-                            warn!("Failed to parse TCP IPv4 packet");
-                            continue;
-                        }
-                    },
-                    x => {
-                        warn!("Uknown protocol in IPv4 packet: {}", x);
-                        continue;
-                    }
+        let (src_addr, dst_addr, nextproto, payload): (IpAddress, IpAddress, IpProtocol, &[u8]) =
+            match IpVersion::of_packet(&buf[..]) {
+                Err(_e) => {
+                    warn!("Malformed packet");
+                    continue;
                 }
-            }
-            Ok(IpVersion::Ipv6) => {
-                warn!("IPv6 not impl");
+                Ok(IpVersion::Ipv4) => {
+                    let Ok(p) = Ipv4Packet::new_checked(&buf[..]) else {
+                    error!("Dwarf packet");
+                    continue;
+                };
+                    (
+                        p.src_addr().into(),
+                        p.dst_addr().into(),
+                        p.next_header(),
+                        p.payload(),
+                    )
+                }
+                Ok(IpVersion::Ipv6) => {
+                    let Ok(p) = Ipv6Packet::new_checked(&buf[..]) else {
+                    error!("Dwarf packet");
+                    continue;
+                };
+                    (
+                        p.src_addr().into(),
+                        p.dst_addr().into(),
+                        p.next_header(),
+                        p.payload(),
+                    )
+                }
+            };
+
+        let key = match nextproto {
+            IpProtocol::Udp => match UdpPacket::new_checked(payload) {
+                Ok(u) => NatKey::Udp {
+                    client_side: IpEndpoint {
+                        addr: src_addr,
+                        port: u.src_port(),
+                    },
+                },
+                Err(_e) => {
+                    warn!("Failed to parse UDP packet");
+                    continue;
+                }
+            },
+            IpProtocol::Tcp => match TcpPacket::new_checked(payload) {
+                Ok(u) => NatKey::Tcp {
+                    client_side: IpEndpoint {
+                        addr: src_addr,
+                        port: u.src_port(),
+                    },
+                    external_side: IpEndpoint {
+                        addr: dst_addr,
+                        port: u.dst_port(),
+                    },
+                },
+                Err(_e) => {
+                    warn!("Failed to parse TCP packet");
+                    continue;
+                }
+            },
+            x => {
+                warn!("Uknown protocol in IPv4 packet: {}", x);
                 continue;
             }
         };
-        let per_socket_sender : &mut Sender<BytesMut> = match table.entry(key) {
+        let per_socket_sender: &mut Sender<BytesMut> = match table.entry(key) {
             hashbrown::hash_map::Entry::Occupied(entry) => entry.into_mut(),
             hashbrown::hash_map::Entry::Vacant(entry) => {
                 info!("New NAT entry for {:?}", key);
@@ -123,19 +124,27 @@ pub async fn run(
                 let k = entry.key().clone();
                 let tx_closes = tx_closes.clone();
                 tokio::spawn(async move {
-                    let ret = match k.proto {
-                        Proto::Tcp => serve_tcp::tcp_outgoing_connection(
-                            tx_to_wg2,
-                            rx_persocket_fromwg,
-                            k.external_side,
-                            k.client_side,
-                        ).await,
-                        Proto::Udp => serve_udp::udp_outgoing_connection(
-                            tx_to_wg2,
-                            rx_persocket_fromwg,
-                            k.external_side,
-                            k.client_side,
-                        ).await,
+                    let ret = match k {
+                        NatKey::Tcp {
+                            external_side,
+                            client_side,
+                        } => {
+                            serve_tcp::tcp_outgoing_connection(
+                                tx_to_wg2,
+                                rx_persocket_fromwg,
+                                external_side,
+                                client_side,
+                            )
+                            .await
+                        }
+                        NatKey::Udp { client_side } => {
+                            serve_udp::udp_outgoing_connection(
+                                tx_to_wg2,
+                                rx_persocket_fromwg,
+                                client_side,
+                            )
+                            .await
+                        }
                     };
                     if let Err(e) = ret {
                         error!("Finished serving {k:?}: {e}");
@@ -144,11 +153,11 @@ pub async fn run(
                     }
                     let _ = tx_closes.send(k).await;
                 });
-            
+
                 entry.insert(tx_persocket_fromwg)
             }
         };
-       
+
         if per_socket_sender.send(buf).await.is_err() {
             error!("Failed to send to a per-socket interface");
         }
