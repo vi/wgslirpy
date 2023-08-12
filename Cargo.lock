@@ -736,6 +736,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "simple-dns"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e3b154a5a073c507d1dd35e2cb454ed499d2216f1305cba4f597b4b64a9c141"
+dependencies = [
+ "bitflags",
+]
+
+[[package]]
 name = "smallvec"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1058,6 +1067,7 @@ dependencies = [
  "bytes",
  "hashbrown",
  "hex",
+ "simple-dns",
  "smoltcp",
  "tokio",
  "tracing",

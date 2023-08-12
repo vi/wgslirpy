@@ -1,5 +1,5 @@
 #![allow(unused_braces)]
-use std::net::SocketAddr;
+use std::net::{SocketAddr, IpAddr};
 
 use argh::FromArgs;
 
@@ -25,6 +25,10 @@ pub struct Opts {
     /// where to bind our own UDP socket
     #[argh(option, short='b')]
     pub bind_ip_port: SocketAddr,
+
+    /// use UDP socket address as a simple A/AAAA-only DNS server
+    #[argh(option, short='D')]
+    pub dns: Option<SocketAddr>,
 }
 
 
@@ -49,7 +53,11 @@ async fn main() -> anyhow::Result<()> {
     
     let (wg_tx, wg_rx) = wgopts.start().await?;
 
-    router::run(wg_rx, wg_tx).await?;
+    let r_opts = router::Opts {
+        dns_addr: opts.dns,
+    };
+
+    router::run(wg_rx, wg_tx, r_opts).await?;
 
     Ok(())
 }

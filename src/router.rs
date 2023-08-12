@@ -1,3 +1,5 @@
+use std::net::{SocketAddr, IpAddr};
+
 use bytes::BytesMut;
 use hashbrown::HashMap;
 
@@ -18,12 +20,18 @@ enum NatKey {
     },
 }
 
+pub struct Opts {
+    pub dns_addr: Option<SocketAddr>,
+}
+
+mod serve_dns;
 mod serve_tcp;
 mod serve_udp;
 
 pub async fn run(
     mut rx_from_wg: Receiver<BytesMut>,
     tx_to_wg: Sender<BytesMut>,
+    opts: Opts,
 ) -> anyhow::Result<()> {
     let mut table = HashMap::<NatKey, Sender<BytesMut>>::new();
 
@@ -83,12 +91,29 @@ pub async fn run(
 
         let key = match nextproto {
             IpProtocol::Udp => match UdpPacket::new_checked(payload) {
-                Ok(u) => NatKey::Udp {
-                    client_side: IpEndpoint {
-                        addr: src_addr,
-                        port: u.src_port(),
-                    },
-                },
+                Ok(u) => {
+                    if let Some(ref dns) = opts.dns_addr {
+                        if dns.port() == u.dst_port() && dns.ip() == IpAddr::from(dst_addr)  {
+                            let tx_to_wg2 = tx_to_wg.clone();
+                            tokio::spawn(async move {
+                                if let Ok(reply) = serve_dns::dns(buf).await {
+                                    debug!("Sending DNS reply");
+                                    let _ = tx_to_wg2.send(reply).await;
+                                } else {
+                                    warn!("Failed to calculate DNS reply");
+                                }
+                            });
+                            
+                            continue;
+                        }
+                    }
+                    NatKey::Udp {
+                        client_side : IpEndpoint {
+                            addr: src_addr,
+                            port: u.src_port(),
+                        },
+                    }
+                }
                 Err(_e) => {
                     warn!("Failed to parse UDP packet");
                     continue;

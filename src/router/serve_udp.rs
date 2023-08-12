@@ -1,13 +1,10 @@
-use std::{net::{SocketAddr, SocketAddrV4, SocketAddrV6}, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use bytes::BytesMut;
 use smoltcp::{
-    iface::{Config, Interface, SocketSet},
     phy::{Checksum, ChecksumCapabilities},
-    socket::udp,
-    time::Instant,
     wire::{
-        HardwareAddress, IpAddress, IpCidr, IpEndpoint, IpProtocol, IpRepr, Ipv4Packet, Ipv6Packet,
+        IpAddress, IpEndpoint, IpProtocol, IpRepr, Ipv4Packet, Ipv6Packet,
         UdpPacket, IpVersion,
     },
 };
@@ -107,6 +104,7 @@ pub async fn udp_outgoing_connection(
                     Ok(u) => {
                         if ! u.verify_checksum(&src_addr, &dst_addr) {
                             warn!("Failed UDP checksum");
+                            continue;
                         }
                         (u.payload(), IpEndpoint::new(dst_addr, u.dst_port()))
                     },
