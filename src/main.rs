@@ -1,14 +1,18 @@
 #![allow(unused_braces)]
-use std::net::{SocketAddr, IpAddr};
+use std::{net::{SocketAddr, IpAddr}, path::PathBuf};
 
 use argh::FromArgs;
 
 /// Expose internet access without root using Wireguard
 #[derive(FromArgs)]
 pub struct Opts {
-    /// main private key of this Wireguard node
+    /// main private key of this Wireguard node, base64-encoded
     #[argh(option,short='k')]
-    pub private_key : String,
+    pub private_key : Option<String>,
+
+    /// main private key of this Wireguard node (content of a specified file), base64-encoded
+    #[argh(option,short='f')]
+    pub private_key_file: Option<PathBuf>,
 
     /// peer's public key
     #[argh(option,short='K')]
@@ -22,15 +26,15 @@ pub struct Opts {
     #[argh(option,short='a')]
     pub keepalive_interval : Option<u16>,
 
-    /// where to bind our own UDP socket
+    /// where to bind our own UDP socket for Wireguard connection
     #[argh(option, short='b')]
     pub bind_ip_port: SocketAddr,
 
-    /// use UDP socket address as a simple A/AAAA-only DNS server
+    /// use this UDP socket address as a simple A/AAAA-only DNS server within Wireguard network
     #[argh(option, short='D')]
     pub dns: Option<SocketAddr>,
 
-    /// reply to ICMP pings on this address
+    /// reply to ICMP pings on this single address within Wireguard network
     #[argh(option, short='P')]
     pub pingable : Option<IpAddr>,
 }
@@ -48,8 +52,17 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(feature="tracing-subscriber")]
     tracing_subscriber::fmt::init();
     let opts : Opts = argh::from_env();
+
+    let privkey = match (opts.private_key, opts.private_key_file) {
+        (None, Some(path)) => {
+            std::fs::read_to_string(path)?
+        }
+        (Some(s), None) => s,
+        _ => anyhow::bail!("Set exactly one of --private-key or --private-key-file")
+    };
+
     let wgopts = WgOpts {
-        private_key: parsebase64_32(&opts.private_key)?.into(),
+        private_key: parsebase64_32(&privkey)?.into(),
         peer_key: parsebase64_32(&opts.peer_key)?.into(),
         peer_endpoint: opts.peer_endpoint,
         keepalive_interval: opts.keepalive_interval,
