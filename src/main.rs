@@ -45,6 +45,7 @@ use wg::{Opts as WgOpts, parsebase64_32};
 
 #[tokio::main(flavor="current_thread")]
 async fn main() -> anyhow::Result<()> {
+    #[cfg(feature="tracing-subscriber")]
     tracing_subscriber::fmt::init();
     let opts : Opts = argh::from_env();
     let wgopts = WgOpts {
