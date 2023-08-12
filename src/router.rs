@@ -34,7 +34,29 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     let mut table = HashMap::<NatKey, Sender<BytesMut>>::new();
 
-    while let Some(buf) = rx_from_wg.recv().await {
+    let (tx_closes, mut rx_closes) : (Sender<NatKey>, Receiver<NatKey>)= channel(4);
+
+    enum SelectOutcome {
+        PacketFromWg(Option<BytesMut>),
+        ConnectionFinish(Option<NatKey>),
+    }
+
+    loop {
+        let ret = tokio::select! {
+            x = rx_from_wg.recv() => SelectOutcome::PacketFromWg(x),
+            x = rx_closes.recv() => SelectOutcome::ConnectionFinish(x),
+        };
+
+        let buf = match ret {
+            SelectOutcome::PacketFromWg(Some(x)) => x,
+            SelectOutcome::ConnectionFinish(None) | SelectOutcome::PacketFromWg(None) => break,
+            SelectOutcome::ConnectionFinish(Some(k)) => {
+                table.remove(&k);
+                continue
+            }
+
+        };
+   
         let key = match IpVersion::of_packet(&buf[..]) {
             Err(_e) => {
                 warn!("Malformed packet");
@@ -99,6 +121,7 @@ pub async fn run(
                 let tx_to_wg2 = tx_to_wg.clone();
                 let (tx_persocket_fromwg, rx_persocket_fromwg) = channel(4);
                 let k = entry.key().clone();
+                let tx_closes = tx_closes.clone();
                 tokio::spawn(async move {
                     let ret = match k.proto {
                         Proto::Tcp => serve_tcp::tcp_outgoing_connection(
@@ -119,6 +142,7 @@ pub async fn run(
                     } else {
                         debug!("Finished serving {k:?}");
                     }
+                    let _ = tx_closes.send(k).await;
                 });
             
                 entry.insert(tx_persocket_fromwg)
