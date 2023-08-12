@@ -29,6 +29,10 @@ pub struct Opts {
     /// use UDP socket address as a simple A/AAAA-only DNS server
     #[argh(option, short='D')]
     pub dns: Option<SocketAddr>,
+
+    /// reply to ICMP pings on this address
+    #[argh(option, short='P')]
+    pub pingable : Option<IpAddr>,
 }
 
 
@@ -55,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
 
     let r_opts = router::Opts {
         dns_addr: opts.dns,
+        pingable: opts.pingable,
     };
 
     router::run(wg_rx, wg_tx, r_opts).await?;

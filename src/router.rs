@@ -18,15 +18,21 @@ enum NatKey {
     Udp {
         client_side: IpEndpoint,
     },
+    Pingable {
+        client_side: IpAddress,
+        external_side: IpAddress,
+    }
 }
 
 pub struct Opts {
     pub dns_addr: Option<SocketAddr>,
+    pub pingable: Option<IpAddr>,
 }
 
 mod serve_dns;
 mod serve_tcp;
 mod serve_udp;
+mod serve_pingable;
 
 pub async fn run(
     mut rx_from_wg: Receiver<BytesMut>,
@@ -135,9 +141,25 @@ pub async fn run(
                     continue;
                 }
             },
+            IpProtocol::Icmp => {
+                debug!("Icmp");
+                if Some(IpAddr::from(dst_addr)) == opts.pingable {
+                    NatKey::Pingable { client_side: src_addr, external_side: dst_addr }
+                } else {
+                    continue
+                }
+            }
+            IpProtocol::Icmpv6 => {
+                debug!("Icmpv6");
+                if Some(IpAddr::from(dst_addr)) == opts.pingable {
+                    NatKey::Pingable { client_side: src_addr, external_side: dst_addr }
+                } else {
+                    continue
+                }
+            }
             x => {
                 warn!("Uknown protocol in IPv4 packet: {}", x);
-                continue;
+                continue
             }
         };
         let per_socket_sender: &mut Sender<BytesMut> = match table.entry(key) {
@@ -169,6 +191,14 @@ pub async fn run(
                                 client_side,
                             )
                             .await
+                        }
+                        NatKey::Pingable { client_side, external_side } => {
+                            serve_pingable::pingable(
+                                tx_to_wg2,
+                                rx_persocket_fromwg,
+                                external_side,
+                                client_side,
+                            ).await
                         }
                     };
                     if let Err(e) = ret {
