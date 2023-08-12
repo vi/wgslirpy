@@ -11,14 +11,16 @@ pub struct ChannelizedDevice {
     pub tx : Sender<BytesMut>,
     pub rx: Option<BytesMut>,
     pub tear_off_buffer: BytesMut,
+    pub mtu : usize,
 }
 
 impl ChannelizedDevice {
-    pub fn new(tx: Sender<BytesMut>) -> Self {
+    pub fn new(tx: Sender<BytesMut>, mtu: usize) -> Self {
         ChannelizedDevice {
             tx,
             rx: None,
             tear_off_buffer: BytesMut::with_capacity(TEAR_OF_ALLOCATION),
+            mtu,
         }
     }
 }
@@ -53,7 +55,7 @@ impl<'b> Device for ChannelizedDevice {
     fn capabilities(&self) -> smoltcp::phy::DeviceCapabilities {
         let mut caps = smoltcp::phy::DeviceCapabilities::default();
         caps.medium = smoltcp::phy::Medium::Ip;
-        caps.max_transmission_unit = 1024;
+        caps.max_transmission_unit = self.mtu;
         caps.checksum = smoltcp::phy::ChecksumCapabilities::ignored();
         caps.checksum.tcp = Checksum::Tx;
         caps.checksum.ipv4 = Checksum::Tx;

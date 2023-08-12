@@ -27,6 +27,7 @@ enum NatKey {
 pub struct Opts {
     pub dns_addr: Option<SocketAddr>,
     pub pingable: Option<IpAddr>,
+    pub mtu: usize,
 }
 
 mod serve_dns;
@@ -39,6 +40,7 @@ pub async fn run(
     tx_to_wg: Sender<BytesMut>,
     opts: Opts,
 ) -> anyhow::Result<()> {
+    let mtu = opts.mtu;
     let mut table = HashMap::<NatKey, Sender<BytesMut>>::new();
 
     let (tx_closes, mut rx_closes): (Sender<NatKey>, Receiver<NatKey>) = channel(4);
@@ -181,6 +183,7 @@ pub async fn run(
                                 rx_persocket_fromwg,
                                 external_side,
                                 client_side,
+                                mtu,
                             )
                             .await
                         }
@@ -198,6 +201,7 @@ pub async fn run(
                                 rx_persocket_fromwg,
                                 external_side,
                                 client_side,
+                                mtu,
                             ).await
                         }
                     };

@@ -23,13 +23,14 @@ pub async fn tcp_outgoing_connection(
     mut rx_from_wg: Receiver<BytesMut>,
     external_addr: IpEndpoint,
     _client_addr: IpEndpoint,
+    mtu: usize,
 ) -> anyhow::Result<()> {
     let target_addr = match external_addr.addr {
         IpAddress::Ipv4(x) => SocketAddr::new(std::net::IpAddr::V4(x.into()), external_addr.port),
         IpAddress::Ipv6(x) => SocketAddr::new(std::net::IpAddr::V6(x.into()), external_addr.port),
     };
 
-    let mut dev = ChannelizedDevice::new(tx_to_wg);
+    let mut dev = ChannelizedDevice::new(tx_to_wg, mtu);
 
     let ic = Config::new(HardwareAddress::Ip);
     let mut ii = Interface::new(ic, &mut dev, Instant::now());

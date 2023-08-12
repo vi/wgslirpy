@@ -37,6 +37,10 @@ pub struct Opts {
     /// reply to ICMP pings on this single address within Wireguard network
     #[argh(option, short='P')]
     pub pingable : Option<IpAddr>,
+
+    /// maximum transfer unit to use for TCP. Default is 1420.
+    #[argh(option, default="1420")]
+    pub mtu: usize,
 }
 
 
@@ -74,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
     let r_opts = router::Opts {
         dns_addr: opts.dns,
         pingable: opts.pingable,
+        mtu: opts.mtu,
     };
 
     router::run(wg_rx, wg_tx, r_opts).await?;

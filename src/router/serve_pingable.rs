@@ -18,9 +18,10 @@ pub async fn pingable(
     mut rx_from_wg: Receiver<BytesMut>,
     external_addr: IpAddress,
     _client_addr: IpAddress,
+    mtu: usize,
 ) -> anyhow::Result<()> {
   
-    let mut dev = ChannelizedDevice::new(tx_to_wg);
+    let mut dev = ChannelizedDevice::new(tx_to_wg, mtu);
 
     let ic = Config::new(HardwareAddress::Ip);
     let mut ii = Interface::new(ic, &mut dev, Instant::now());
