@@ -96,6 +96,7 @@ pub mod router;
 mod channelized_smoltcp_device;
 
 use router::PortForward;
+use tracing::warn;
 use wg::{Opts as WgOpts, parsebase64_32};
 
 #[tokio::main(flavor="current_thread")]
@@ -118,10 +119,16 @@ async fn main() -> anyhow::Result<()> {
         peer_endpoint: opts.peer_endpoint,
         keepalive_interval: opts.keepalive_interval,
         bind_ip_port: opts.bind_ip_port,
-        transmit_queue_capacity: opts.transmit_queue_capacity,
     };
     
-    let (wg_tx, wg_rx) = wgopts.start().await?;
+    let (tx_towg, rx_towg) = tokio::sync::mpsc::channel(opts.transmit_queue_capacity);
+    let (tx_fromwg, rx_fromwg) = tokio::sync::mpsc::channel(4);
+    tokio::spawn(async move {
+        match wgopts.start(tx_fromwg, rx_towg).await {
+            Ok(()) => warn!("Exited from Wireguard loop"),
+            Err(e) => warn!("Exiten from Wireguard loop: {e}"),
+        }
+    });
 
     let r_opts = router::Opts {
         dns_addr: opts.dns,
@@ -132,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
         incoming_tcp: opts.incoming_tcp,
     };
 
-    router::run(wg_rx, wg_tx, r_opts).await?;
+    router::run(rx_fromwg, tx_towg, r_opts).await?;
 
     Ok(())
 }
