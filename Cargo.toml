@@ -2,6 +2,12 @@
 name = "wgslirpy"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/vi/wgslirpy"
+license = "MIT/Apache-2.0"
+description = "User-space Wireguard to internet router, like SLiRP, but with Wireguard instead of PPP"
+categories = ["network-programming", "command-line-utilities"]
+keywords = ["wireguard","onetun","slirp","nat"]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,4 +26,4 @@ tracing = "0.1.37"
 tracing-subscriber = {version="0.3.17", optional=true}
 
 [features]
-default = ["tracing-subscriber"]
+default = ["tracing-subscriber", "tracing/release_max_level_debug"]
