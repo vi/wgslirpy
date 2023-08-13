@@ -60,6 +60,14 @@ mod serve_pingable;
 mod serve_tcp;
 mod serve_udp;
 
+struct ArmedJoinHandle(tokio::task::JoinHandle<()>);
+
+impl Drop for ArmedJoinHandle {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 pub async fn run(
     mut rx_from_wg: Receiver<BytesMut>,
     tx_to_wg: Sender<BytesMut>,
@@ -108,12 +116,14 @@ pub async fn run(
         Receiver<(NatKey, Sender<BytesMut>)>,
     ) = channel(4);
 
+    // To make dropping router's Future automatically close listening ports
+    let mut tcp_auto_aborter : Vec<ArmedJoinHandle> = vec![];
     for PortForward { host, src, dst } in opts.incoming_tcp {
         let tx_to_wg2 = tx_to_wg.clone();
         let tcps = tokio::net::TcpListener::bind(host).await?;
         let tx_opens2 = tx_opens.clone();
         let tx_closes2 = tx_closes.clone();
-        tokio::spawn(async move {
+        let jh = tokio::spawn(async move {
             if let Some(src) = src {
                 info!(
                     "Permanent TCP forward from host {}: would connect {} -> {}",
@@ -167,6 +177,7 @@ pub async fn run(
             }
             warn!("Finished listening TCP {host}");
         });
+        tcp_auto_aborter.push(ArmedJoinHandle(jh));
     }
 
     enum SelectOutcome {
@@ -300,7 +311,7 @@ pub async fn run(
                 }
             }
             x => {
-                warn!("Uknown protocol in IPv4 packet: {}", x);
+                warn!("Uknown protocol in IP packet: {}", x);
                 continue;
             }
         };
