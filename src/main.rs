@@ -49,14 +49,52 @@ pub struct Opts {
     /// nubmer of outgoing (to wireguard) packets to hold in a queue
     #[argh(option, default="256")]
     pub transmit_queue_capacity: usize,
+
+    /// forward this host UDP port into Wireguard network.
+    /// You need to specify triplet of socket addresses: host, source (optional) and dest.
+    /// Host address is address to bind operating system socket to.
+    /// source and dest addreses are used within Wireguard network.
+    /// Example: -u 0.0.0.0:1234,10.0.2.1:1234,10.0.2.15:1234
+    #[argh(option, short='u', from_str_fn(parse_sa_pair))]
+    pub incoming_udp: Vec<PortForward>,
+
+    /// forward this host TCP port into Wireguard network.
+    /// You need to specify triplet of socket addresses: host, source (optional) and dest.
+    /// Host address is address to bind operating system socket to.
+    /// source and dest addreses are used within Wireguard network.
+    /// Example: -t 0.0.0.0:1234,10.0.2.1:1234,10.0.2.15:1234
+    #[argh(option, short='t', from_str_fn(parse_sa_pair))]
+    pub incoming_tcp: Vec<PortForward>,
 }
 
+fn parse_sa_pair(x: &str) -> Result<PortForward, String> {
+    let chunks = x.split(',').collect::<Vec<_>>();
+    if chunks.len() != 3 {
+        return Err("Argument to -u or -t must be comma-separated triplet of socket addresses".to_owned())
+    }
+    let Ok(sa1) : Result<SocketAddr,_> = chunks[0].parse() else {
+        return Err(format!("Failed to parse {} as a socket address", chunks[0]))
+    };
+    let sa2 = if chunks[1].is_empty() {
+        None
+    } else {
+        let Ok(sa2) : Result<SocketAddr,_> = chunks[1].parse() else {
+            return Err(format!("Failed to parse {} as a socket address", chunks[1]))
+        };
+        Some(sa2)
+    };
+    let Ok(sa3) : Result<SocketAddr,_> = chunks[2].parse() else {
+        return Err(format!("Failed to parse {} as a socket address", chunks[2]))
+    };
+    Ok(PortForward{host: sa1, src: sa2, dst:sa3})
+}
 
 const TEAR_OF_ALLOCATION : usize = 65536;
 pub mod wg;
 pub mod router;
 mod channelized_smoltcp_device;
 
+use router::PortForward;
 use wg::{Opts as WgOpts, parsebase64_32};
 
 #[tokio::main(flavor="current_thread")]
@@ -89,6 +127,7 @@ async fn main() -> anyhow::Result<()> {
         pingable: opts.pingable,
         mtu: opts.mtu,
         tcp_buffer_size: opts.tcp_buffer_size,
+        incoming_udp: opts.incoming_udp,
     };
 
     router::run(wg_rx, wg_tx, r_opts).await?;

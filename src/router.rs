@@ -39,6 +39,13 @@ pub struct Opts {
     pub pingable: Option<IpAddr>,
     pub mtu: usize,
     pub tcp_buffer_size: usize,
+    pub incoming_udp: Vec<PortForward>,
+}
+
+pub struct PortForward {
+    pub host: SocketAddr,
+    pub src: Option<SocketAddr>,
+    pub dst: SocketAddr,
 }
 
 mod serve_dns;
@@ -54,6 +61,30 @@ pub async fn run(
     let mtu = opts.mtu;
     let tcp_buffer_size = opts.tcp_buffer_size;
     let mut table = HashMap::<NatKey, Sender<BytesMut>>::new();
+
+    for PortForward { host, src, dst } in opts.incoming_udp {
+        let tx_to_wg2 = tx_to_wg.clone();
+        let (tx_persocket_fromwg, rx_persocket_fromwg) = channel(4);
+        tokio::spawn(async move {
+            if let Some(src) = src {
+                info!("Permanent UDP forward from host {}: would send {} -> {}", host, src, dst);
+            } else {
+                info!("Permanent UDP forward from host {}: would send * -> {}", host, dst);
+            }
+            let ret = serve_udp::udp_outgoing_connection(
+                tx_to_wg2,
+                rx_persocket_fromwg,
+                dst.into(),
+                Some(host),
+                src.map(IpEndpoint::from),
+            ).await;
+            if let Err(e) = ret {
+                warn!("Permanent UDP forward exited with error: {e}");
+            }
+        });
+        let k = NatKey::Udp { client_side: dst.into() };
+        table.insert(k, tx_persocket_fromwg);
+    }
 
     let (tx_closes, mut rx_closes): (Sender<NatKey>, Receiver<NatKey>) = channel(4);
 
@@ -205,6 +236,8 @@ pub async fn run(
                                 tx_to_wg2,
                                 rx_persocket_fromwg,
                                 client_side,
+                                None,
+                                None,
                             )
                             .await
                         }

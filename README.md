@@ -16,7 +16,6 @@ A command line tool (and a Rust library) for accepting incoming connections with
 ## Limitations
 
 * No ICMP (except of pings to specific address for testing). This affects UDP's "port unreachable"s.
-* Forwarding connections _to_ Wireguard network is not yet implemented (but should be reasonably easy to add).
 
 ## Demo session
 

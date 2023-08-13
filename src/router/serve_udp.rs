@@ -22,15 +22,17 @@ pub async fn udp_outgoing_connection(
     tx_to_wg: Sender<BytesMut>,
     mut rx_from_wg: Receiver<BytesMut>,
     client_addr: IpEndpoint,
+    bind_addr: Option<SocketAddr>,
+    force_srcaddr: Option<IpEndpoint>,
 ) -> anyhow::Result<()> {
-    let ua = match client_addr.addr {
+    let ua = bind_addr.unwrap_or_else(||match client_addr.addr {
         IpAddress::Ipv4(_) => {
             SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
         }
         IpAddress::Ipv6(_) => {
             SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 0)
         }
-    };
+    });
     let upstream_socket = UdpSocket::bind(ua).await?;
 
     let mut external_udp_buffer = [0; 2048];
@@ -65,7 +67,7 @@ pub async fn udp_outgoing_connection(
         let ret = tokio::select! {
             x = rx_from_wg.recv() => SelectOutcome::FromWg(x),
             x = upstream_socket.recv_from(&mut external_udp_buffer) => SelectOutcome::FromUdp(x),
-            _ = deadline => SelectOutcome::Timeout,
+            _ = deadline, if bind_addr.is_none() => SelectOutcome::Timeout,
         };
         match ret {
             SelectOutcome::FromWg(from_wg) => {
@@ -121,7 +123,7 @@ pub async fn udp_outgoing_connection(
                 warn!("Failure receiving from upstream UDP socket: {e}");
             }
             SelectOutcome::FromUdp(Ok((n, from))) => {
-                let external_addr = IpEndpoint::new(from.ip().into(), from.port());
+                let external_addr = force_srcaddr.unwrap_or_else(||IpEndpoint::new(from.ip().into(), from.port()));
 
                 let data = &external_udp_buffer[..n];
 
