@@ -13,6 +13,7 @@ This allows creating a sort of VPN server without root access, e.g. from Android
 * For UDP, hole punching / NAT traversal should work (not tested though)
 * For TCP, half-closed connections and backpressure should work
 * Crude DNS server for resolving IPv4 and IPv6 addresses using host DNS implementation
+* Reverse mode for specific TCP and UDP ports - forwarding connections from host to Wireguard.
 
 ## Limitations
 
