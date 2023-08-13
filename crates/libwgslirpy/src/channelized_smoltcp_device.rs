@@ -5,7 +5,7 @@ use smoltcp::phy::{Device,RxToken,TxToken, Checksum};
 use tokio::sync::mpsc::Sender;
 use tracing::warn;
 
-use crate::TEAR_OF_ALLOCATION;
+use crate::TEAR_OF_ALLOCATION_SIZE;
 
 pub struct ChannelizedDevice {
     pub tx : Sender<BytesMut>,
@@ -19,7 +19,7 @@ impl ChannelizedDevice {
         ChannelizedDevice {
             tx,
             rx: None,
-            tear_off_buffer: BytesMut::with_capacity(TEAR_OF_ALLOCATION),
+            tear_off_buffer: BytesMut::with_capacity(TEAR_OF_ALLOCATION_SIZE),
             mtu,
         }
     }
@@ -84,7 +84,7 @@ impl<'a> TxToken for &'a mut ChannelizedDevice {
             warn!("Failed to transmit into a ChannelizedDevice");
         }
         if self.tear_off_buffer.capacity() < 2048 {
-            self.tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION);
+            self.tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION_SIZE);
         }
         ret
     }

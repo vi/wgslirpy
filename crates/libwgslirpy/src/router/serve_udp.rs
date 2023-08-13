@@ -14,7 +14,7 @@ use tokio::{
 };
 use tracing::{warn, debug};
 
-use crate::TEAR_OF_ALLOCATION;
+use crate::TEAR_OF_ALLOCATION_SIZE;
 
 pub const UDP_CONNECTION_EXPIRATION_SECONDS : u64 = 92;
 
@@ -51,7 +51,7 @@ pub async fn serve_udp(
     checksummer.ipv4 = Checksum::Tx;
     checksummer.tcp = Checksum::Tx;
 
-    let mut tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION);
+    let mut tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION_SIZE);
 
     enum SelectOutcome {
         FromWg(Option<BytesMut>),
@@ -176,7 +176,7 @@ pub async fn serve_udp(
                 let buf = tear_off_buffer.split();
                 tx_to_wg.send(buf).await?;
                 if tear_off_buffer.capacity() < 2048 {
-                    tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION);
+                    tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION_SIZE);
                 }
             }
             SelectOutcome::Timeout => {

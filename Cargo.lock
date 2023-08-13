@@ -462,6 +462,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 
 [[package]]
+name = "libwgslirpy"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "base64 0.21.2",
+ "boringtun",
+ "bytes",
+ "hashbrown",
+ "simple-dns",
+ "smoltcp",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1067,6 +1082,7 @@ dependencies = [
  "bytes",
  "hashbrown",
  "hex",
+ "libwgslirpy",
  "simple-dns",
  "smoltcp",
  "tokio",

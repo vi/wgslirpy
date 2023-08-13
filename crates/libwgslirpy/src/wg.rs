@@ -7,7 +7,7 @@ use bytes::BytesMut;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, warn};
 
-use crate::TEAR_OF_ALLOCATION;
+use crate::TEAR_OF_ALLOCATION_SIZE;
 
 pub struct Opts {
     pub private_key: StaticSecret,
@@ -41,7 +41,7 @@ impl Opts {
         let mut each_second = tokio::time::interval(Duration::from_secs(1));
         let mut udp_recv_buf = [0; 4096 - 32];
         let mut wg_scratch_buf = [0; 4096];
-        let mut tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION);
+        let mut tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION_SIZE);
         loop {
             let mut last_seen_recv_address = None;
             let mut tr: Option<TunnResult> = tokio::select! {
@@ -98,7 +98,7 @@ impl Opts {
                             tear_off_buffer.extend_from_slice(b);
                             tx_fromwg.send(tear_off_buffer.split()).await?;
                             if tear_off_buffer.capacity() < 2048 {
-                                tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION);
+                                tear_off_buffer = BytesMut::with_capacity(TEAR_OF_ALLOCATION_SIZE);
                             }
                         }
                     }

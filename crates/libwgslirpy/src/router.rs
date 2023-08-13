@@ -9,6 +9,8 @@ use smoltcp::wire::{IpEndpoint, IpVersion, TcpPacket};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::{debug, error, info, warn};
 
+use crate::ArmedJoinHandle;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum NatKey {
     Tcp {
@@ -59,14 +61,6 @@ mod serve_dns;
 mod serve_pingable;
 mod serve_tcp;
 mod serve_udp;
-
-struct ArmedJoinHandle(tokio::task::JoinHandle<()>);
-
-impl Drop for ArmedJoinHandle {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
 
 pub async fn run(
     mut rx_from_wg: Receiver<BytesMut>,

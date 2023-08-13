@@ -90,14 +90,7 @@ fn parse_sa_pair(x: &str) -> Result<PortForward, String> {
     Ok(PortForward{host: sa1, src: sa2, dst:sa3})
 }
 
-const TEAR_OF_ALLOCATION : usize = 65536;
-pub mod wg;
-pub mod router;
-mod channelized_smoltcp_device;
-
-use router::PortForward;
-use tracing::warn;
-use wg::{Opts as WgOpts, parsebase64_32};
+use libwgslirpy::{parsebase64_32, router::{PortForward, self}, wg};
 
 #[tokio::main(flavor="current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -113,22 +106,13 @@ async fn main() -> anyhow::Result<()> {
         _ => anyhow::bail!("Set exactly one of --private-key or --private-key-file")
     };
 
-    let wgopts = WgOpts {
+    let wgopts = wg::Opts {
         private_key: parsebase64_32(&privkey)?.into(),
         peer_key: parsebase64_32(&opts.peer_key)?.into(),
         peer_endpoint: opts.peer_endpoint,
         keepalive_interval: opts.keepalive_interval,
         bind_ip_port: opts.bind_ip_port,
     };
-    
-    let (tx_towg, rx_towg) = tokio::sync::mpsc::channel(opts.transmit_queue_capacity);
-    let (tx_fromwg, rx_fromwg) = tokio::sync::mpsc::channel(4);
-    tokio::spawn(async move {
-        match wgopts.start(tx_fromwg, rx_towg).await {
-            Ok(()) => warn!("Exited from Wireguard loop"),
-            Err(e) => warn!("Exiten from Wireguard loop: {e}"),
-        }
-    });
 
     let r_opts = router::Opts {
         dns_addr: opts.dns,
@@ -139,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
         incoming_tcp: opts.incoming_tcp,
     };
 
-    router::run(rx_fromwg, tx_towg, r_opts).await?;
+    libwgslirpy::run(wgopts, r_opts, opts.transmit_queue_capacity).await?;
 
     Ok(())
 }
