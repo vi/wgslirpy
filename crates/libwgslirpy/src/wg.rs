@@ -1,23 +1,47 @@
+//! Simplified interface to `boringtun` based on Tokio's mpsc channels.
+
 use std::{net::SocketAddr, time::Duration};
 
 use base64::Engine;
 use boringtun::noise::TunnResult;
-use boringtun::x25519::{PublicKey, StaticSecret};
+pub use boringtun::x25519::{PublicKey, StaticSecret};
 use bytes::BytesMut;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, warn};
 
 use crate::TEAR_OF_ALLOCATION_SIZE;
 
+/// Options for being a Wireguard peer
 pub struct Opts {
+    /// Private key of this Wireguard node.
+    /// 
+    /// Use `parsebase64_32` and `into()` to specify it from a string.
     pub private_key: StaticSecret,
+
+
+    /// Public key of single Wireguard peer we are connecting to.
+    /// 
+    /// Use `parsebase64_32` and `into()` to specify it from a string.
     pub peer_key: PublicKey,
+
+    /// Static socket address of Wireguard peer to connect to.
+    /// 
+    /// If it is missing, it listens for incoming datagrams and remembers last seen `from` address
+    /// (data from which Wireguard implementation recognized) for `sendto` purposes.
     pub peer_endpoint: Option<SocketAddr>,
+
+    /// How often to send keepalive packets to the peer.
     pub keepalive_interval: Option<u16>,
+
+    /// Socket address to bind local UDP port to.
     pub bind_ip_port: SocketAddr,
 }
 
 impl Opts {
+    /// Start Wireguard implementation using this options set.
+    /// 
+    /// Received IP packets would appear at `tx_fromwg`'s channel.
+    /// IP packets to be sent to Wireguard tunnel is to be written to `rx_towg`'s channel.
     pub async fn start(
         &self,
         tx_fromwg: Sender<BytesMut>,
@@ -111,6 +135,7 @@ impl Opts {
     }
 }
 
+/// Helper funtion to simplify creating [`StaticSecret`]s and [`PublicKey`]s.
 pub fn parsebase64_32(x: &str) -> anyhow::Result<[u8; 32]> {
     let b = base64::engine::general_purpose::STANDARD.decode(x)?;
     Ok(b[..].try_into()?)

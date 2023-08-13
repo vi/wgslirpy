@@ -1,4 +1,6 @@
+//! Helper module to create `smoltcp` devices that use single slot for received packet and a tokio::mpsc channel to transmit packets.
 
+#![allow(missing_docs)]
 
 use bytes::BytesMut;
 use smoltcp::phy::{Device,RxToken,TxToken, Checksum};
@@ -9,12 +11,24 @@ use crate::TEAR_OF_ALLOCATION_SIZE;
 
 pub struct ChannelizedDevice {
     pub tx : Sender<BytesMut>,
+
+    /// Put a packet to be handled by smoltcp here. Channelized device would take it from here.
     pub rx: Option<BytesMut>,
+
+    /// Moderately big allocation to snip away pieces from it when we need to transmit packets into [`tx`].
+    /// 
+    /// When remaining capacity falls below some threshold, the buffer gets allocated again.
+    /// 
+    /// Idea is to reduce number of allocations at the expense of the size of allocated block.
     pub tear_off_buffer: BytesMut,
+
     pub mtu : usize,
 }
 
 impl ChannelizedDevice {
+    /// Create the device using given queue for transmitting packets, retuning given `mtu` as MTU.
+    /// 
+    /// Checksumming is enabled, menium is "IP".
     pub fn new(tx: Sender<BytesMut>, mtu: usize) -> Self {
         ChannelizedDevice {
             tx,

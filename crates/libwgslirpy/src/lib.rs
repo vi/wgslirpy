@@ -1,3 +1,8 @@
+#![warn(missing_docs)]
+//! Library part of wgslirpy - Tokio-, smoltcp- and boringtun-based user-space router.
+//! See main (i.e. CLI tool) documentation for what is it.
+
+
 const TEAR_OF_ALLOCATION_SIZE : usize = 65536;
 
 pub mod wg;
@@ -8,6 +13,14 @@ use tracing::warn;
 
 pub use wg::parsebase64_32;
 
+pub extern crate bytes;
+pub extern crate boringtun;
+pub extern crate smoltcp;
+pub extern crate tokio;
+
+/// Start the application using given Wireguard and routing options.
+/// 
+/// Aboring `Future` returned by this function should abort all tasks spawned related by it and close all sockets.
 pub async fn run(wireguard_options: wg::Opts, router_options: router::Opts, transmit_queue_capacity: usize) -> anyhow::Result<()> { 
     let (tx_towg, rx_towg) = tokio::sync::mpsc::channel(transmit_queue_capacity);
     let (tx_fromwg, rx_fromwg) = tokio::sync::mpsc::channel(4);

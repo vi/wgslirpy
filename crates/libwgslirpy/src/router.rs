@@ -1,3 +1,12 @@
+//! Routing and smoltcp-facing part of the library.
+//! 
+//! This moduile allows a pair of tokio::sync::mpsc channels that represent sent and transmitted IP bytes to be used to access outer
+//! network using operating system's sockets.
+//! 
+//! "host" network represents operating system's sockets and communication counterparts that are accessed using them.
+//! 
+//! "internal" network represents senders and receivers of `BytesMut`-wrapped IP packet queues.
+
 use std::net::{IpAddr, SocketAddr};
 
 use bytes::BytesMut;
@@ -42,18 +51,40 @@ impl std::fmt::Display for NatKey {
     }
 }
 
+/// Options regarding interaction with smoltcp and host sockets.
 pub struct Opts {
+    /// If UDP datagrams are directed at this socket address then attempt to reply to a DNS request internally instead of forwarding the datagram properly
     pub dns_addr: Option<SocketAddr>,
+
+    /// If ICMP or ICMPv6 packet is directed at this address, route it to smoltcp's interface (which will reply to ICMP echo requests) instead of dropping it.
     pub pingable: Option<IpAddr>,
+
+    /// Maximum transfer unit to use for smoltcp stack
     pub mtu: usize,
+
+    /// Receive and send smoltcp TCP socket buffer sizes. Does not affect host socket buffer sizes.
     pub tcp_buffer_size: usize,
+
+    /// Listen these UDP ports and direct content into the internal network.
+    
     pub incoming_udp: Vec<PortForward>,
+
+    /// Listen these TCP ports on host and direct connections into the internal network.
     pub incoming_tcp: Vec<PortForward>,
 }
 
+/// Instructions how to forward a port from host to our internal IP network.
 pub struct PortForward {
+    /// Which socket address to use to bind the host socket to.
     pub host: SocketAddr,
+
+    /// Typically incoming connection or datagram address is also used as a source address within internal network.
+    /// Setting `src` allows you to override this and just use source fixed address.
+    /// 
+    /// If port part is `0` and this port forward is used for `incoming_tcp`, the port number is filled in with nonzero value is some way.
     pub src: Option<SocketAddr>,
+
+    /// Where within our internal network to forward connections or datagrams to.
     pub dst: SocketAddr,
 }
 
@@ -62,6 +93,9 @@ mod serve_pingable;
 mod serve_tcp;
 mod serve_udp;
 
+/// Start the router using given options and a part of channels that represent internal network.
+/// 
+/// Dropping the resulting `Future` should abort the entire router.
 pub async fn run(
     mut rx_from_wg: Receiver<BytesMut>,
     tx_to_wg: Sender<BytesMut>,
