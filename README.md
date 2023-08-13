@@ -2,6 +2,8 @@
 
 A command line tool (and a Rust library) for accepting incoming connections within a Wireguard link and routing them to external network using usual opeating system's socket API.
 
+<img src="wgslirp.svg" alt="Diagram depicting operation of Wgslirpy" width="40%"/>
+
 ## Features
 
 * Maintaining Wireguard connection with one peer, using [Boringtun](https://github.com/cloudflare/boringtun) library.
