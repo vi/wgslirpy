@@ -128,6 +128,7 @@ async fn main() -> anyhow::Result<()> {
         mtu: opts.mtu,
         tcp_buffer_size: opts.tcp_buffer_size,
         incoming_udp: opts.incoming_udp,
+        incoming_tcp: opts.incoming_tcp,
     };
 
     router::run(wg_rx, wg_tx, r_opts).await?;

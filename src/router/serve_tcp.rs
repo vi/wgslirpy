@@ -18,11 +18,19 @@ use crate::channelized_smoltcp_device::ChannelizedDevice;
 
 const DANGLE_TIME_SECONDS: u64 = 10;
 
-pub async fn tcp_outgoing_connection(
+pub enum ServeTcpMode {
+    Outgoing,
+    Incoming {
+        tcp: TcpStream,
+        client_addr: IpEndpoint,
+    },
+}
+
+pub async fn serve_tcp(
     tx_to_wg: Sender<BytesMut>,
     mut rx_from_wg: Receiver<BytesMut>,
     external_addr: IpEndpoint,
-    _client_addr: IpEndpoint,
+    mode: ServeTcpMode,
     mtu: usize,
     tcp_buffer_size: usize,
 ) -> anyhow::Result<()> {
@@ -38,6 +46,19 @@ pub async fn tcp_outgoing_connection(
     ii.update_ip_addrs(|aa| {
         let _ = aa.push(IpCidr::new(external_addr.addr, 0));
     });
+
+    /// To enable avoid un-rust-analyzer-able big content of tokio::select.
+    #[derive(Debug)]
+    enum SelectOutcome {
+        TimePassed,
+        PacketFromWg(Option<BytesMut>),
+        WrittenToRealTcpSocket(Result<usize, std::io::Error>),
+        ReadFromRealTcpSocket(Result<usize, std::io::Error>),
+        /// No timeout was active, we need to calculate a new one
+        Noop,
+        /// Global deadline reached
+        Deadline,
+    }
 
     macro_rules! loop_with_deadline {
         ($loop_label:lifetime, $deadline:ident, $sockets:ident, $code:block) => {
@@ -93,26 +114,6 @@ pub async fn tcp_outgoing_connection(
         }
     }
 
-    let tcp_ret = TcpStream::connect(target_addr).await;
-    let mut tcp = match tcp_ret {
-        Ok(x) => x,
-        Err(e) => {
-            debug!("Failed to connect to upstream TCP: {e}");
-            // Run the deadline loop without a socket to deliver TCP RSTs.
-
-            let graveyard_deadline = tokio::time::sleep(Duration::from_secs(DANGLE_TIME_SECONDS));
-            tokio::pin!(graveyard_deadline);
-            let mut sockets = SocketSet::new([]);
-            loop_with_deadline!('graveyard_loop, graveyard_deadline, sockets, {
-
-            });
-
-            return Ok(());
-        }
-    };
-    let (mut tcp_r, mut tcp_w) = tcp.split();
-    debug!("Connected to upstream TCP");
-
     let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; tcp_buffer_size]);
     let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; tcp_buffer_size]);
     let tcp_socket = tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer);
@@ -124,41 +125,77 @@ pub async fn tcp_outgoing_connection(
 
     ii.poll(Instant::now(), &mut dev, &mut sockets);
 
-    {
-        let s = sockets.get_mut::<tcp::Socket>(h);
-        s.listen(external_addr)?;
-    }
+    let outgoing = matches!(mode, ServeTcpMode::Outgoing);
 
-    /// To enable avoid un-rust-analyzer-able big content of tokio::select.
-    #[derive(Debug)]
-    enum SelectOutcome {
-        TimePassed,
-        PacketFromWg(Option<BytesMut>),
-        WrittenToRealTcpSocket(Result<usize, std::io::Error>),
-        ReadFromRealTcpSocket(Result<usize, std::io::Error>),
-        /// No timeout was active, we need to calculate a new one
-        Noop,
-        /// Global deadline reached
-        Deadline,
-    }
+    let mut tcp = match mode {
+        ServeTcpMode::Outgoing => {
+            let tcp_ret = TcpStream::connect(target_addr).await;
+            let tcp = match tcp_ret {
+                Ok(x) => x,
+                Err(e) => {
+                    debug!("Failed to connect to upstream TCP: {e}");
+                    // Run the deadline loop without a socket to deliver TCP RSTs.
+
+                    let graveyard_deadline =
+                        tokio::time::sleep(Duration::from_secs(DANGLE_TIME_SECONDS));
+                    tokio::pin!(graveyard_deadline);
+                    let mut sockets = SocketSet::new([]);
+                    loop_with_deadline!('graveyard_loop, graveyard_deadline, sockets, {
+
+                    });
+
+                    return Ok(());
+                }
+            };
+            debug!("Connected to upstream TCP");
+            {
+                let s = sockets.get_mut::<tcp::Socket>(h);
+                s.listen(external_addr)?;
+            }
+            tcp
+        }
+        ServeTcpMode::Incoming { tcp, client_addr } => {
+            {
+                let s = sockets.get_mut::<tcp::Socket>(h);
+                s.connect(ii.context(), client_addr, external_addr)?;
+            }
+            tcp
+        }
+    };
+    let (mut tcp_r, mut tcp_w) = tcp.split();
 
     let accept_deadline = tokio::time::sleep(Duration::from_secs(DANGLE_TIME_SECONDS));
     tokio::pin!(accept_deadline);
     loop_with_deadline!('accept_loop, accept_deadline, sockets, {
         let s = sockets.get_mut::<tcp::Socket>(h);
 
-        if s.is_active() {
+        if s.is_active() && s.state() != State::SynSent {
+            break 'accept_loop;
+        }
+        if s.state() == State::Closed {
             break 'accept_loop;
         }
     });
     drop(accept_deadline);
 
-    if !sockets.get_mut::<tcp::Socket>(h).is_active() {
-        warn!("Failed to accept the connection from client");
-        return Ok(());
+    if outgoing {
+        if !sockets.get_mut::<tcp::Socket>(h).is_active() {
+            warn!("Failed to accept the connection from client");
+            return Ok(());
+        }
+    } else {
+        let s = sockets.get_mut::<tcp::Socket>(h);
+        if s.state() == State::SynSent || !s.is_active() {
+            warn!("Failed to connect to TCP within Wireguard");
+            return Ok(());
+        }
     }
 
-    debug!("Accepted the connection");
+    if outgoing {
+        debug!("Accepted the connection");
+    } else {
+        debug!("Connected");
+    }
 
     let mut sleeper: Option<tokio::time::Sleep> = None;
 
@@ -171,7 +208,6 @@ pub async fn tcp_outgoing_connection(
         match s.state() {
             State::Closed
             | State::Listen
-            | State::SynSent
             | State::Closing
             | State::LastAck
             | State::TimeWait => {
@@ -179,6 +215,7 @@ pub async fn tcp_outgoing_connection(
                 break 'main_loop;
             }
             State::FinWait1
+            | State::SynSent
             | State::CloseWait
             | State::FinWait2
             | State::SynReceived
@@ -234,7 +271,7 @@ pub async fn tcp_outgoing_connection(
                 }
             }
         } else {
-            if ! do_shutdown {
+            if !do_shutdown {
                 tokio::select! {
                     biased;
                     x = rx_from_wg.recv() => SelectOutcome::PacketFromWg(x),

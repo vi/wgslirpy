@@ -1,6 +1,7 @@
 # wgslirpy
 
-A command line tool (and a Rust library) for accepting incoming connections within a Wireguard link and routing them to external network using usual opeating system's socket API.
+A command line tool (and a Rust library) for accepting incoming connections within a Wireguard link and routing them to external network using usual opeating system's socket API.  
+This allows creating a sort of VPN server without root access, e.g. from Android app or when using unprivileged containers.
 
 <img src="wgslirp.svg" alt="Diagram depicting operation of Wgslirpy" width="40%"/>
 

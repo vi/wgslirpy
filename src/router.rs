@@ -1,4 +1,4 @@
-use std::net::{SocketAddr, IpAddr};
+use std::net::{IpAddr, SocketAddr};
 
 use bytes::BytesMut;
 use hashbrown::HashMap;
@@ -21,15 +21,21 @@ enum NatKey {
     Pingable {
         client_side: IpAddress,
         external_side: IpAddress,
-    }
+    },
 }
 
 impl std::fmt::Display for NatKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NatKey::Tcp { client_side, external_side } => write!(f, "TCP {client_side} -> {external_side}"),
+            NatKey::Tcp {
+                client_side,
+                external_side,
+            } => write!(f, "TCP {client_side} -> {external_side}"),
             NatKey::Udp { client_side } => write!(f, "UDP {client_side} -> *"),
-            NatKey::Pingable { client_side, external_side } => write!(f, "Pinger {client_side} -> {external_side}"),
+            NatKey::Pingable {
+                client_side,
+                external_side,
+            } => write!(f, "Pinger {client_side} -> {external_side}"),
         }
     }
 }
@@ -40,6 +46,7 @@ pub struct Opts {
     pub mtu: usize,
     pub tcp_buffer_size: usize,
     pub incoming_udp: Vec<PortForward>,
+    pub incoming_tcp: Vec<PortForward>,
 }
 
 pub struct PortForward {
@@ -49,9 +56,9 @@ pub struct PortForward {
 }
 
 mod serve_dns;
+mod serve_pingable;
 mod serve_tcp;
 mod serve_udp;
-mod serve_pingable;
 
 pub async fn run(
     mut rx_from_wg: Receiver<BytesMut>,
@@ -67,43 +74,127 @@ pub async fn run(
         let (tx_persocket_fromwg, rx_persocket_fromwg) = channel(4);
         tokio::spawn(async move {
             if let Some(src) = src {
-                info!("Permanent UDP forward from host {}: would send {} -> {}", host, src, dst);
+                info!(
+                    "Permanent UDP forward from host {}: would send {} -> {}",
+                    host, src, dst
+                );
             } else {
-                info!("Permanent UDP forward from host {}: would send * -> {}", host, dst);
+                info!(
+                    "Permanent UDP forward from host {}: would send * -> {}",
+                    host, dst
+                );
             }
-            let ret = serve_udp::udp_outgoing_connection(
+            let ret = serve_udp::serve_udp(
                 tx_to_wg2,
                 rx_persocket_fromwg,
                 dst.into(),
                 Some(host),
                 src.map(IpEndpoint::from),
-            ).await;
+            )
+            .await;
             if let Err(e) = ret {
                 warn!("Permanent UDP forward exited with error: {e}");
             }
         });
-        let k = NatKey::Udp { client_side: dst.into() };
+        let k = NatKey::Udp {
+            client_side: dst.into(),
+        };
         table.insert(k, tx_persocket_fromwg);
     }
 
     let (tx_closes, mut rx_closes): (Sender<NatKey>, Receiver<NatKey>) = channel(4);
+    let (tx_opens, mut rx_opens): (
+        Sender<(NatKey, Sender<BytesMut>)>,
+        Receiver<(NatKey, Sender<BytesMut>)>,
+    ) = channel(4);
+
+    for PortForward { host, src, dst } in opts.incoming_tcp {
+        let tx_to_wg2 = tx_to_wg.clone();
+        let tcps = tokio::net::TcpListener::bind(host).await?;
+        let tx_opens2 = tx_opens.clone();
+        let tx_closes2 = tx_closes.clone();
+        tokio::spawn(async move {
+            if let Some(src) = src {
+                info!(
+                    "Permanent TCP forward from host {}: would connect {} -> {}",
+                    host, src, dst
+                );
+            } else {
+                info!(
+                    "Permanent TCP forward from host {}: would connect * -> {}",
+                    host, dst
+                );
+            }
+            let mut counter : u16 = 1024;
+            while let Ok((tcp, from)) = tcps.accept().await {
+                let (tx_persocket_fromwg, rx_persocket_fromwg) = channel(4);
+
+                let tx_to_wg3 = tx_to_wg2.clone();
+                let tx_closes3 = tx_closes2.clone();
+                let mut src = src.unwrap_or(from);
+                if src.port() == 0 {
+                    src.set_port(counter);
+                    counter = counter.wrapping_add(1);
+                    if counter == 0 { counter = 1024 }
+                }
+                let k = NatKey::Tcp {
+                    client_side: dst.into(),
+                    external_side: src.into(),
+                };
+                tokio::spawn(async move {
+                    info!("Incoming TCP connection from {} to {} on host side. Connecting from {} to {} within Wireguard.", from, host, src, dst);
+
+                    let ret = serve_tcp::serve_tcp(
+                        tx_to_wg3,
+                        rx_persocket_fromwg,
+                        IpEndpoint::from(src),
+                        serve_tcp::ServeTcpMode::Incoming { tcp, client_addr: IpEndpoint::from(dst) },
+                        mtu,
+                        tcp_buffer_size,
+                    )
+                    .await;
+
+                    if let Err(e) = ret {
+                        warn!("TCP back connection from {from} exited with error: {e}");
+                    }
+
+                    info!("  Finished serving {from}");
+                    let _ = tx_closes3.send(k).await;
+                });
+                if tx_opens2.send((k, tx_persocket_fromwg)).await.is_err() {
+                    break;
+                }
+            }
+            warn!("Finished listening TCP {host}");
+        });
+    }
 
     enum SelectOutcome {
         PacketFromWg(Option<BytesMut>),
         ConnectionFinish(Option<NatKey>),
+        IncomingTcpStart(Option<(NatKey, Sender<BytesMut>)>),
     }
 
     loop {
         let ret = tokio::select! {
             x = rx_from_wg.recv() => SelectOutcome::PacketFromWg(x),
             x = rx_closes.recv() => SelectOutcome::ConnectionFinish(x),
+            x = rx_opens.recv() => SelectOutcome::IncomingTcpStart(x),
         };
 
         let buf = match ret {
             SelectOutcome::PacketFromWg(Some(x)) => x,
-            SelectOutcome::ConnectionFinish(None) | SelectOutcome::PacketFromWg(None) => break,
+            SelectOutcome::ConnectionFinish(None)
+            | SelectOutcome::PacketFromWg(None)
+            | SelectOutcome::IncomingTcpStart(None) => break,
             SelectOutcome::ConnectionFinish(Some(k)) => {
                 table.remove(&k);
+                continue;
+            }
+            SelectOutcome::IncomingTcpStart(Some((k, sender))) => {
+                if table.insert(k, sender).is_some() {
+                    warn!("Incoming TCP connection's entry evicted another connection");
+                }
                 continue;
             }
         };
@@ -144,7 +235,7 @@ pub async fn run(
             IpProtocol::Udp => match UdpPacket::new_checked(payload) {
                 Ok(u) => {
                     if let Some(ref dns) = opts.dns_addr {
-                        if dns.port() == u.dst_port() && dns.ip() == IpAddr::from(dst_addr)  {
+                        if dns.port() == u.dst_port() && dns.ip() == IpAddr::from(dst_addr) {
                             let tx_to_wg2 = tx_to_wg.clone();
                             tokio::spawn(async move {
                                 if let Ok(reply) = serve_dns::dns(buf).await {
@@ -154,12 +245,12 @@ pub async fn run(
                                     warn!("Failed to calculate DNS reply");
                                 }
                             });
-                            
+
                             continue;
                         }
                     }
                     NatKey::Udp {
-                        client_side : IpEndpoint {
+                        client_side: IpEndpoint {
                             addr: src_addr,
                             port: u.src_port(),
                         },
@@ -189,22 +280,28 @@ pub async fn run(
             IpProtocol::Icmp => {
                 debug!("Icmp");
                 if Some(IpAddr::from(dst_addr)) == opts.pingable {
-                    NatKey::Pingable { client_side: src_addr, external_side: dst_addr }
+                    NatKey::Pingable {
+                        client_side: src_addr,
+                        external_side: dst_addr,
+                    }
                 } else {
-                    continue
+                    continue;
                 }
             }
             IpProtocol::Icmpv6 => {
                 debug!("Icmpv6");
                 if Some(IpAddr::from(dst_addr)) == opts.pingable {
-                    NatKey::Pingable { client_side: src_addr, external_side: dst_addr }
+                    NatKey::Pingable {
+                        client_side: src_addr,
+                        external_side: dst_addr,
+                    }
                 } else {
-                    continue
+                    continue;
                 }
             }
             x => {
                 warn!("Uknown protocol in IPv4 packet: {}", x);
-                continue
+                continue;
             }
         };
         let per_socket_sender: &mut Sender<BytesMut> = match table.entry(key) {
@@ -219,20 +316,20 @@ pub async fn run(
                     let ret = match k {
                         NatKey::Tcp {
                             external_side,
-                            client_side,
+                            client_side: _,
                         } => {
-                            serve_tcp::tcp_outgoing_connection(
+                            serve_tcp::serve_tcp(
                                 tx_to_wg2,
                                 rx_persocket_fromwg,
                                 external_side,
-                                client_side,
+                                serve_tcp::ServeTcpMode::Outgoing,
                                 mtu,
                                 tcp_buffer_size,
                             )
                             .await
                         }
                         NatKey::Udp { client_side } => {
-                            serve_udp::udp_outgoing_connection(
+                            serve_udp::serve_udp(
                                 tx_to_wg2,
                                 rx_persocket_fromwg,
                                 client_side,
@@ -241,14 +338,18 @@ pub async fn run(
                             )
                             .await
                         }
-                        NatKey::Pingable { client_side, external_side } => {
+                        NatKey::Pingable {
+                            client_side,
+                            external_side,
+                        } => {
                             serve_pingable::pingable(
                                 tx_to_wg2,
                                 rx_persocket_fromwg,
                                 external_side,
                                 client_side,
                                 mtu,
-                            ).await
+                            )
+                            .await
                         }
                     };
                     if let Err(e) = ret {

@@ -18,7 +18,7 @@ use crate::TEAR_OF_ALLOCATION;
 
 pub const UDP_CONNECTION_EXPIRATION_SECONDS : u64 = 92;
 
-pub async fn udp_outgoing_connection(
+pub async fn serve_udp(
     tx_to_wg: Sender<BytesMut>,
     mut rx_from_wg: Receiver<BytesMut>,
     client_addr: IpEndpoint,
