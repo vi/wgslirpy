@@ -62,7 +62,8 @@ pub struct Opts {
     /// You need to specify triplet of socket addresses: host, source (optional) and dest.
     /// Host address is address to bind operating system socket to.
     /// source and dest addreses are used within Wireguard network.
-    /// Example: -t 0.0.0.0:1234,10.0.2.1:1234,10.0.2.15:1234
+    /// If source port is 0, roundrobin is used.
+    /// Example: -t 0.0.0.0:1234,,10.0.2.15:1234
     #[argh(option, short='t', from_str_fn(parse_sa_pair))]
     pub incoming_tcp: Vec<PortForward>,
 }

@@ -119,7 +119,7 @@ Download a pre-built executable from [Github releases](https://github.com/vi/wgs
 <details><summary> wgslirpy --help output</summary>
 
 ```
-Usage: wgslirpy [-k <private-key>] [-f <private-key-file>] -K <peer-key> [-p <peer-endpoint>] [-a <keepalive-interval>] -b <bind-ip-port> [-D <dns>] [-P <pingable>] [--mtu <mtu>] [--tcp-buffer-size <tcp-buffer-size>] [--transmit-queue-capacity <transmit-queue-capacity>]
+Usage: wgslirpy [-k <private-key>] [-f <private-key-file>] -K <peer-key> [-p <peer-endpoint>] [-a <keepalive-interval>] -b <bind-ip-port> [-D <dns>] [-P <pingable>] [--mtu <mtu>] [--tcp-buffer-size <tcp-buffer-size>] [--transmit-queue-capacity <transmit-queue-capacity>] [-u <incoming-udp...>] [-t <incoming-tcp...>]
 
 Expose internet access without root using Wireguard
 
@@ -144,8 +144,21 @@ Options:
                     system socket buffer also applies.
   --transmit-queue-capacity
                     nubmer of outgoing (to wireguard) packets to hold in a queue
+  -u, --incoming-udp
+                    forward this host UDP port into Wireguard network. You need
+                    to specify triplet of socket addresses: host, source
+                    (optional) and dest. Host address is address to bind
+                    operating system socket to. source and dest addreses are
+                    used within Wireguard network. Example: -u
+                    0.0.0.0:1234,10.0.2.1:1234,10.0.2.15:1234
+  -t, --incoming-tcp
+                    forward this host TCP port into Wireguard network. You need
+                    to specify triplet of socket addresses: host, source
+                    (optional) and dest. Host address is address to bind
+                    operating system socket to. source and dest addreses are
+                    used within Wireguard network. If source port is 0,
+                    roundrobin is used. Example: -t 0.0.0.0:1234,,10.0.2.15:1234
   --help            display usage information
-
 ```
 </details>
 
