@@ -24,6 +24,7 @@ pub async fn tcp_outgoing_connection(
     external_addr: IpEndpoint,
     _client_addr: IpEndpoint,
     mtu: usize,
+    tcp_buffer_size: usize,
 ) -> anyhow::Result<()> {
     let target_addr = match external_addr.addr {
         IpAddress::Ipv4(x) => SocketAddr::new(std::net::IpAddr::V4(x.into()), external_addr.port),
@@ -112,11 +113,11 @@ pub async fn tcp_outgoing_connection(
     let (mut tcp_r, mut tcp_w) = tcp.split();
     debug!("Connected to upstream TCP");
 
-    let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; 65535]);
-    let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; 65535]);
+    let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; tcp_buffer_size]);
+    let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; tcp_buffer_size]);
     let tcp_socket = tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer);
 
-    let mut external_tcp_buffer = [0; 32768];
+    let mut external_tcp_buffer = vec![0; tcp_buffer_size];
 
     let mut sockets = SocketSet::new([SocketStorage::EMPTY]);
     let h = sockets.add(tcp_socket);
@@ -220,7 +221,7 @@ pub async fn tcp_outgoing_connection(
                     biased;
                     x = rx_from_wg.recv() => SelectOutcome::PacketFromWg(x),
                     x = tcp_w.write(dtstes.unwrap_or(b"")), if dtstes.is_some() => SelectOutcome::WrittenToRealTcpSocket(x),
-                    x = tcp_r.read(&mut external_tcp_buffer[..]), if nbsend > 0 => SelectOutcome::ReadFromRealTcpSocket(x),
+                    x = tcp_r.read(&mut external_tcp_buffer[..nbsend]), if nbsend > 0 => SelectOutcome::ReadFromRealTcpSocket(x),
                     _ = tmo => SelectOutcome::TimePassed,
                 }
             } else {
@@ -228,7 +229,7 @@ pub async fn tcp_outgoing_connection(
                     biased;
                     x = rx_from_wg.recv() => SelectOutcome::PacketFromWg(x),
                     x = tcp_w.shutdown() => { SelectOutcome::WrittenToRealTcpSocket(x.map(|()|0)) }
-                    x = tcp_r.read(&mut external_tcp_buffer[..]), if nbsend > 0 => SelectOutcome::ReadFromRealTcpSocket(x),
+                    x = tcp_r.read(&mut external_tcp_buffer[..nbsend]), if nbsend > 0 => SelectOutcome::ReadFromRealTcpSocket(x),
                     _ = tmo => SelectOutcome::TimePassed,
                 }
             }
@@ -238,7 +239,7 @@ pub async fn tcp_outgoing_connection(
                     biased;
                     x = rx_from_wg.recv() => SelectOutcome::PacketFromWg(x),
                     x = tcp_w.write(dtstes.unwrap_or(b"")), if dtstes.is_some() => SelectOutcome::WrittenToRealTcpSocket(x),
-                    x = tcp_r.read(&mut external_tcp_buffer[..]), if nbsend > 0 => SelectOutcome::ReadFromRealTcpSocket(x),
+                    x = tcp_r.read(&mut external_tcp_buffer[..nbsend]), if nbsend > 0 => SelectOutcome::ReadFromRealTcpSocket(x),
                     _ = std::future::ready(()) => SelectOutcome::Noop,
                 }
             } else {
@@ -246,7 +247,7 @@ pub async fn tcp_outgoing_connection(
                     biased;
                     x = rx_from_wg.recv() => SelectOutcome::PacketFromWg(x),
                     x = tcp_w.shutdown() => { SelectOutcome::WrittenToRealTcpSocket(x.map(|()|0)) }
-                    x = tcp_r.read(&mut external_tcp_buffer[..]), if nbsend > 0 => SelectOutcome::ReadFromRealTcpSocket(x),
+                    x = tcp_r.read(&mut external_tcp_buffer[..nbsend]), if nbsend > 0 => SelectOutcome::ReadFromRealTcpSocket(x),
                     _ = std::future::ready(()) => SelectOutcome::Noop,
                 }
             }

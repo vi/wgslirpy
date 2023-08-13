@@ -24,10 +24,21 @@ enum NatKey {
     }
 }
 
+impl std::fmt::Display for NatKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NatKey::Tcp { client_side, external_side } => write!(f, "TCP {client_side} -> {external_side}"),
+            NatKey::Udp { client_side } => write!(f, "UDP {client_side} -> *"),
+            NatKey::Pingable { client_side, external_side } => write!(f, "Pinger {client_side} -> {external_side}"),
+        }
+    }
+}
+
 pub struct Opts {
     pub dns_addr: Option<SocketAddr>,
     pub pingable: Option<IpAddr>,
     pub mtu: usize,
+    pub tcp_buffer_size: usize,
 }
 
 mod serve_dns;
@@ -41,6 +52,7 @@ pub async fn run(
     opts: Opts,
 ) -> anyhow::Result<()> {
     let mtu = opts.mtu;
+    let tcp_buffer_size = opts.tcp_buffer_size;
     let mut table = HashMap::<NatKey, Sender<BytesMut>>::new();
 
     let (tx_closes, mut rx_closes): (Sender<NatKey>, Receiver<NatKey>) = channel(4);
@@ -167,7 +179,7 @@ pub async fn run(
         let per_socket_sender: &mut Sender<BytesMut> = match table.entry(key) {
             hashbrown::hash_map::Entry::Occupied(entry) => entry.into_mut(),
             hashbrown::hash_map::Entry::Vacant(entry) => {
-                info!("New NAT entry for {:?}", key);
+                info!("Serving {}", key);
                 let tx_to_wg2 = tx_to_wg.clone();
                 let (tx_persocket_fromwg, rx_persocket_fromwg) = channel(4);
                 let k = entry.key().clone();
@@ -184,6 +196,7 @@ pub async fn run(
                                 external_side,
                                 client_side,
                                 mtu,
+                                tcp_buffer_size,
                             )
                             .await
                         }
@@ -206,9 +219,9 @@ pub async fn run(
                         }
                     };
                     if let Err(e) = ret {
-                        error!("Finished serving {k:?}: {e}");
+                        error!("  finished serving {k}: {e}");
                     } else {
-                        debug!("Finished serving {k:?}");
+                        info!("  Finished serving {k}");
                     }
                     let _ = tx_closes.send(k).await;
                 });

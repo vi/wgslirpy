@@ -15,6 +15,7 @@ pub struct Opts {
     pub peer_endpoint: Option<SocketAddr>,
     pub keepalive_interval: Option<u16>,
     pub bind_ip_port: SocketAddr,
+    pub transmit_queue_capacity: usize,
 }
 
 impl Opts {
@@ -28,7 +29,7 @@ impl Opts {
             None,
         ).map_err(|e|anyhow::anyhow!(e))?;
 
-        let (tx_towg, mut rx_towg) = channel(64);
+        let (tx_towg, mut rx_towg) = channel(self.transmit_queue_capacity);
         let (tx_fromwg, rx_fromwg) = channel(4);
 
         let udp = tokio::net::UdpSocket::bind(self.bind_ip_port).await?;

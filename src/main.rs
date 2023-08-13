@@ -41,6 +41,14 @@ pub struct Opts {
     /// maximum transfer unit to use for TCP. Default is 1420.
     #[argh(option, default="1420")]
     pub mtu: usize,
+    
+    /// in-application socket TCP buffer size. Note that operating system socket buffer also applies.
+    #[argh(option, default="65535")]
+    pub tcp_buffer_size: usize,
+
+    /// nubmer of outgoing (to wireguard) packets to hold in a queue
+    #[argh(option, default="256")]
+    pub transmit_queue_capacity: usize,
 }
 
 
@@ -71,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
         peer_endpoint: opts.peer_endpoint,
         keepalive_interval: opts.keepalive_interval,
         bind_ip_port: opts.bind_ip_port,
+        transmit_queue_capacity: opts.transmit_queue_capacity,
     };
     
     let (wg_tx, wg_rx) = wgopts.start().await?;
@@ -79,6 +88,7 @@ async fn main() -> anyhow::Result<()> {
         dns_addr: opts.dns,
         pingable: opts.pingable,
         mtu: opts.mtu,
+        tcp_buffer_size: opts.tcp_buffer_size,
     };
 
     router::run(wg_rx, wg_tx, r_opts).await?;

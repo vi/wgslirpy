@@ -9,7 +9,7 @@ use smoltcp::{
     },
 };
 
-use tracing::{warn, debug};
+use tracing::{warn, info};
 
 
 pub async fn dns(
@@ -66,7 +66,7 @@ pub async fn dns(
     let mut reply = dns.clone().into_reply();
     
     let nam = format!("{}:0", q.qname);
-    debug!("DNS query {nam}");
+    info!("DNS query {nam} from {src_addr} {srcport}");
 
     if let Ok(ret) = tokio::net::lookup_host(nam).await {
         for x in ret {
