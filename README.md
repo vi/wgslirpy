@@ -51,7 +51,7 @@ peer# echo nameserver 192.168.72.2 > /etc/netns/testing-wgslirp/resolv.conf
 <details><summary>Activation</summary>
 
 ```
-gateway$ RUST_LOG=debug wgslirpy --private-key SG43Zi0wGp4emfJ/XpTnnmtnK8SSjjIHOc3Zh37c928= -b 127.0.0.1:9797 --peer-key rPpCjWzIv/yAtZZi+C/pVprie8D0QaGlPtJXlDi6bmI= --keepalive-interval 10 --dns 192.168.72.2:53 --pingable 192.168.72.2
+gateway$ RUST_LOG=debug wgslirpy --private-key SG43Zi0wGp4emfJ/XpTnnmtnK8SSjjIHOc3Zh37c928= -b 127.0.0.1:9797 --peer-key rPpCjWzIv/yAtZZi+C/pVprie8D0QaGlPtJXlDi6bmI= --peer-endpoint 127.0.0.1:9796 --keepalive-interval 10 --dns 192.168.72.2:53 --pingable 192.168.72.2
 DEBUG boringtun::noise: Sending handshake_initiation
 DEBUG boringtun::noise: Received handshake_response local_idx=1 remote_idx=2743606023
 DEBUG boringtun::noise: New session session=1
