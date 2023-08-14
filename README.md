@@ -9,7 +9,7 @@ This allows creating a sort of VPN server without root access, e.g. from Android
 
 * Maintaining Wireguard connection with one peer, using [Boringtun](https://github.com/cloudflare/boringtun) library.
 * Decoding incoming TCP or UDP connections using [smoltcp](https://github.com/smoltcp-rs/smoltcp) library
-* Forwarding TCP and UDP connections from Wireguard to external world, exchanging traffic userspace and real sockets.
+* Forwarding TCP and UDP connections from Wireguard to external world, exchanging traffic between userspace and real sockets.
 * For UDP, hole punching / NAT traversal should work (not tested though)
 * For TCP, half-closed connections and backpressure should work
 * Crude DNS server for resolving IPv4 and IPv6 addresses using host DNS implementation
