@@ -8,6 +8,7 @@ const TEAR_OF_ALLOCATION_SIZE : usize = 65536;
 pub mod wg;
 pub mod router;
 pub mod channelized_smoltcp_device;
+pub mod gue;
 
 use tracing::warn;
 
@@ -41,4 +42,22 @@ impl Drop for ArmedJoinHandle {
     fn drop(&mut self) {
         self.0.abort();
     }
+}
+
+/// Start the application using given GUE and routing options. This mode is does not provide any encryption or security.
+/// 
+/// Aboring `Future` returned by this function should abort all tasks spawned related by it and close all sockets.
+pub async fn run_gue(gue_options: gue::Opts, router_options: router::Opts, transmit_queue_capacity: usize) -> anyhow::Result<()> { 
+    let (tx_towg, rx_towg) = tokio::sync::mpsc::channel(transmit_queue_capacity);
+    let (tx_fromwg, rx_fromwg) = tokio::sync::mpsc::channel(4);
+    let _jh = ArmedJoinHandle(tokio::spawn(async move {
+        match gue_options.start(tx_fromwg, rx_towg).await {
+            Ok(()) => warn!("Exited from GUE loop"),
+            Err(e) => warn!("Exiten from GUE loop: {e}"),
+        }
+    }));
+
+    router::run(rx_fromwg, tx_towg, router_options).await?;
+
+    Ok(())
 }

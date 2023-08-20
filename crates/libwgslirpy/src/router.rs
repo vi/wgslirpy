@@ -221,7 +221,7 @@ pub async fn run(
             x = rx_opens.recv() => SelectOutcome::IncomingTcpStart(x),
         };
 
-        let buf = match ret {
+        let mut buf = match ret {
             SelectOutcome::PacketFromWg(Some(x)) => x,
             SelectOutcome::ConnectionFinish(None)
             | SelectOutcome::PacketFromWg(None)
@@ -237,6 +237,20 @@ pub async fn run(
                 continue;
             }
         };
+
+        if buf.len() == 0 {
+            continue;
+        }
+
+        if buf.len() >= 4 {
+            // Skip over simple GUE headers
+            if &buf[..4] == [0,4,0,0] {
+                buf=buf.split_off(4);
+            }
+            if &buf[..4] == [0,0x29,0,0] {
+                buf=buf.split_off(4);
+            }
+        }
 
         let (src_addr, dst_addr, nextproto, payload): (IpAddress, IpAddress, IpProtocol, &[u8]) =
             match IpVersion::of_packet(&buf[..]) {

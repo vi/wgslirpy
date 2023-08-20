@@ -98,22 +98,6 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let opts : Opts = argh::from_env();
 
-    let privkey = match (opts.private_key, opts.private_key_file) {
-        (None, Some(path)) => {
-            std::fs::read_to_string(path)?
-        }
-        (Some(s), None) => s,
-        _ => anyhow::bail!("Set exactly one of --private-key or --private-key-file")
-    };
-
-    let wgopts = wg::Opts {
-        private_key: parsebase64_32(&privkey)?.into(),
-        peer_key: parsebase64_32(&opts.peer_key)?.into(),
-        peer_endpoint: opts.peer_endpoint,
-        keepalive_interval: opts.keepalive_interval,
-        bind_ip_port: opts.bind_ip_port,
-    };
-
     let r_opts = router::Opts {
         dns_addr: opts.dns,
         pingable: opts.pingable,
@@ -123,7 +107,33 @@ async fn main() -> anyhow::Result<()> {
         incoming_tcp: opts.incoming_tcp,
     };
 
-    libwgslirpy::run(wgopts, r_opts, opts.transmit_queue_capacity).await?;
+    if opts.private_key.as_deref() == Some("INSECURE") && opts.peer_key == "GUE" {
+        let gueopts = libwgslirpy::gue::Opts {
+            peer_endpoint: opts.peer_endpoint,
+            keepalive_interval: opts.keepalive_interval,
+            bind_ip_port: opts.bind_ip_port,
+        };
+        libwgslirpy::run_gue(gueopts, r_opts, opts.transmit_queue_capacity).await?;
+    } else {
+        let privkey = match (opts.private_key, opts.private_key_file) {
+            (None, Some(path)) => {
+                std::fs::read_to_string(path)?
+            }
+            (Some(s), None) => s,
+            _ => anyhow::bail!("Set exactly one of --private-key or --private-key-file")
+        };
+    
+        let wgopts = wg::Opts {
+            private_key: parsebase64_32(&privkey)?.into(),
+            peer_key: parsebase64_32(&opts.peer_key)?.into(),
+            peer_endpoint: opts.peer_endpoint,
+            keepalive_interval: opts.keepalive_interval,
+            bind_ip_port: opts.bind_ip_port,
+        };
+    
+        libwgslirpy::run(wgopts, r_opts, opts.transmit_queue_capacity).await?;
+    }
+
 
     Ok(())
 }

@@ -163,6 +163,30 @@ Options:
 ```
 </details>
 
+## Wireguardless (GUE/FOU) mode
+
+You can opt out Wireguard layer using special keywords `INSECURE` and `GUE` as local and peer keys respectively.
+This way wgslirpy would just send IPv4/IPv6 packets directly as UDP datagrams.
+
+<details><summary>Example session</summary>
+
+```
+gateway$ wgslirpy -k INSECURE -K GUE -b 127.0.0.1:6556 --dns 10.0.2.1:53 -P 10.0.2.1
+peer# ip fou add port 6555 gue local 127.0.0.1 peer 127.0.0.1 peer_port 6556 dev lo
+peer# ip link add guegue type sit remote 127.0.0.1 local 127.0.0.1 encap gue encap-sport 6555 encap-dport 6556 encap-csum
+peer# ip link set guegue netns testing-wgslirp
+peer# ip netns exec testing-wgslirp ip link set guegue up
+peer# ip netns exec testing-wgslirp ip addr add 10.0.2.15/24 dev guegue
+peer# ip netns exec testing-wgslirp ip route add default dev guegue
+peer# ip netns exec testing-wgslirp ping 10.0.2.1
+64 bytes from 10.0.2.1: icmp_seq=4 ttl=64 time=2.53 ms
+...
+```
+
+You can also use simpler mode with `ipip` and `fou` instead of `sit` and `gue`, but that wouldn't support IPv6.
+
+</details>
+
 ## See also
 
 * [onetun](https://github.com/aramperes/onetun) - Similar idea, but is designed to forward connections _to_ Wireguard instead of _from_ Wireguard.
